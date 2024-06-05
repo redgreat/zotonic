@@ -209,6 +209,8 @@ model.present = function(data) {
                     username: data.username,
                     password: data.password,
                     passcode: data.passcode,
+                    "code-new": data["code-new"],
+                    test_passcode: data.test_passcode,
                     authuser: data.authuser || null,
                     setautologon: !!data.setautologon
                 })
@@ -297,17 +299,24 @@ model.present = function(data) {
         }
     }
 
-    if (data.is_auth_error && state.authenticating(model)) {
-        model.authentication_error = data.error;
-        if (model.auth.status == 'ok') {
-            model.state_change('auth_known');
+    if (data.is_auth_error) {
+        if (state.authenticating(model)) {
+            model.authentication_error = data.error;
+            if (model.auth.status == 'ok') {
+                model.state_change('auth_known');
+            } else {
+                model.state_change('auth_unknown');
+            }
+            self.publish("model/auth/event/auth-error", {
+                error: model.authentication_error,
+                data: data.data
+            });
         } else {
-            model.state_change('auth_unknown');
+            self.publish("model/auth/event/auth-error", {
+                error: data.error,
+                data: data.data
+            });
         }
-        self.publish("model/auth/event/auth-error", {
-            error: model.authentication_error,
-            data: data.data
-        });
     }
 
     if (data.is_auth_changed && state.authChanging(model)) {
@@ -327,7 +336,9 @@ model.present = function(data) {
             username: data.username,
             password: data.password,
             secret: data.secret,
-            passcode: data.passcode
+            passcode: data.passcode,
+            "code-new": data["code-new"],
+            test_passcode: data.test_passcode
         })
         .then(function(resp) { return resp.json(); })
         .then(function(body) { actions.authLogonResponse(body); })
@@ -335,18 +346,24 @@ model.present = function(data) {
     }
 
     if (data.is_change) {
-        model.state_change('authenticating');
         model.onauth = data.onauth || null;
 
         fetchWithUA({
             cmd: "change",
             password: data.password,
             password_reset: data.password_reset,
-            passcode: data.passcode
+            passcode: data.passcode,
+            "code-new": data["code-new"],
+            test_passcode: data.test_passcode,
+            url: "#"
         })
         .then(function(resp) { return resp.json(); })
-        .then(function(body) { actions.authLogonResponse(body); })
+        .then(function(body) { actions.authChangeResponse(body); })
         .catch((e) => { actions.fetchError(); });
+    }
+
+    if (data.is_change_response) {
+        self.publish('model/auth/event/auth-change-result', data.data);
     }
 
     if (model.next_check > 0) {
@@ -543,16 +560,23 @@ actions.authLogonResponse = function(data) {
             break;
         case "error":
             model.present({
-                    is_auth_error: true,
-                    is_fetch_error: false,
-                    error: data.error,
-                    data: data
-                });
+                is_auth_error: true,
+                is_fetch_error: false,
+                error: data.error,
+                data: data
+            });
             break;
         default:
             console.log("Unkown LogonResponse payload", data);
             break;
     }
+}
+
+actions.authChangeResponse = function(data) {
+    model.present({
+        is_change_response: true,
+        data: data
+    });
 }
 
 actions.fetchError = function(_data) {
@@ -577,6 +601,8 @@ actions.logon = function(data) {
         username: data.username,
         password: data.password,
         passcode: data.passcode,
+        "code-new": data["code-new"],
+        test_passcode: data.test_passcode,
         setautologon: data.rememberme ? true : false
     };
     model.present(dataLogon)
@@ -595,6 +621,8 @@ actions.logonForm = function(data) {
         username: username,
         password: data.value.password || null,
         passcode: data.value.passcode || null,
+        "code-new": data.value["code-new"],
+        test_passcode: data.value.test_passcode,
         setautologon: data.value.rememberme ? true : false,
         authuser: data.value.authuser || null,
         onauth: data.value.onauth
@@ -632,7 +660,7 @@ actions.resetCodeCheck = function(msg) {
         cmd: "reset_check",
         username: msg.payload.username || "",
         secret: msg.payload.secret,
-        passcode: msg.payload.secret || ""
+        passcode: msg.payload.passcode || ""
     };
 
     fetch( self.abs_url("/zotonic-auth"), {
@@ -668,6 +696,8 @@ actions.resetPassword = function(msg) {
         password: msg.payload.password,
         secret: msg.payload.secret,
         passcode: msg.payload.passcode,
+        "code-new": msg.payload["code-new"],
+        test_passcode: msg.payload.test_passcode,
         setautologon: msg.payload.rememberme ? true : false,
         onauth: msg.payload.onauth || null
     };
@@ -680,6 +710,8 @@ actions.changePassword = function(msg) {
         password: msg.payload.password,
         password_reset: msg.payload.password_reset,
         passcode: msg.payload.passcode,
+        "code-new": msg.payload["code-new"],
+        test_passcode: msg.payload.test_passcode,
         onauth: msg.payload.onauth || null
     };
     model.present(data);
