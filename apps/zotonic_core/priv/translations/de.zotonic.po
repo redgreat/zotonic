@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: zotonic\n"
 "POT-Creation-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"PO-Revision-Date: 2024-06-04 12:44\n"
+"PO-Revision-Date: 2024-06-28 11:27\n"
 "Last-Translator: \n"
 "Language-Team: German\n"
 "MIME-Version: 1.0\n"
@@ -194,7 +194,7 @@ msgstr "Sind Sie sicher, dass Sie alle Regeln dauerhaft machen wollen?"
 msgid "Are you sure you want to restore all ACL rules to their currently published version?"
 msgstr "Sind Sie sicher, dass Sie alle ACL-Regeln in ihrer aktuell veröffentlichten Version wiederherstellen möchten?"
 
-#: apps/zotonic_mod_acl_user_groups/priv/templates/_action_dialog_change_category.tpl:16./apps/zotonic_mod_acl_user_groups/priv/templates/_action_dialog_delete_rsc.acl_user_group.tpl:36./apps/zotonic_mod_acl_user_groups/priv/templates/_action_dialog_delete_rsc.acl_user_group.tpl:50./apps/zotonic_mod_acl_user_groups/priv/templates/_dialog_acl_rule_edit.tpl:160./apps/zotonic_mod_acl_user_groups/priv/templates/admin_acl_rules_upload.tpl:77
+#: apps/zotonic_mod_acl_user_groups/priv/templates/_action_dialog_change_category.tpl:16./apps/zotonic_mod_acl_user_groups/priv/templates/_action_dialog_delete_rsc.acl_user_group.tpl:36./apps/zotonic_mod_acl_user_groups/priv/templates/_action_dialog_delete_rsc.acl_user_group.tpl:50./apps/zotonic_mod_acl_user_groups/priv/templates/_dialog_acl_rule_edit.tpl:160./apps/zotonic_mod_acl_user_groups/priv/templates/admin_acl_rules_upload.tpl:78
 #: apps/zotonic_mod_admin/priv/templates/_action_dialog_change_category.tpl:39./apps/zotonic_mod_admin/priv/templates/_action_dialog_connect_tab_find.tpl:41./apps/zotonic_mod_admin/priv/templates/_action_dialog_connect_tab_find.tpl:173./apps/zotonic_mod_admin/priv/templates/_action_dialog_delete_rsc.tpl:6./apps/zotonic_mod_admin/priv/templates/_action_dialog_duplicate_rsc.tpl:7./apps/zotonic_mod_admin/priv/templates/_action_dialog_edit_basics.tpl:77./apps/zotonic_mod_admin/priv/templates/_action_dialog_media_upload_tab_upload.tpl:71./apps/zotonic_mod_admin/priv/templates/_action_dialog_media_upload_tab_url.tpl:35./apps/zotonic_mod_admin/priv/templates/_action_dialog_new_rsc_tab.tpl:259./apps/zotonic_mod_admin/priv/templates/_admin_edit_blocks.tpl:40./apps/zotonic_mod_admin/priv/templates/_admin_overview_filter_panel.tpl:301./apps/zotonic_mod_admin/priv/templates/_dialog_admin_bulk_delete.tpl:17./apps/zotonic_mod_admin/priv/templates/_dialog_admin_bulk_update.tpl:85./apps/zotonic_mod_admin/priv/templates/_dialog_admin_rsc_note.tpl:28
 #: apps/zotonic_mod_admin_category/priv/templates/_action_dialog_delete_rsc.category.tpl:38./apps/zotonic_mod_admin_category/priv/templates/_action_dialog_delete_rsc.category.tpl:52
 #: apps/zotonic_mod_admin_config/priv/templates/_action_dialog_config_delete.tpl:7./apps/zotonic_mod_admin_config/priv/templates/_action_dialog_config_edit.tpl:21
@@ -203,7 +203,7 @@ msgstr "Sind Sie sicher, dass Sie alle ACL-Regeln in ihrer aktuell veröffentlic
 #: apps/zotonic_mod_admin_merge/priv/templates/_confirm_merge.tpl:100
 #: apps/zotonic_mod_admin_modules/priv/templates/_dialog_admin_modules_activate_depending.tpl:31./apps/zotonic_mod_admin_modules/priv/templates/_dialog_admin_modules_deactivate_depending.tpl:14
 #: apps/zotonic_mod_admin_predicate/priv/templates/_action_dialog_delete_rsc.predicate.tpl:30./apps/zotonic_mod_admin_predicate/priv/templates/_action_dialog_delete_rsc.predicate.tpl:46./apps/zotonic_mod_admin_predicate/priv/templates/_action_dialog_predicate_new.tpl:15
-#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:49
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:65./apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_remove.tpl:33
 #: apps/zotonic_mod_authentication/priv/templates/_logon_box.tpl:118./apps/zotonic_mod_authentication/priv/templates/_logon_service_error.tpl:28./apps/zotonic_mod_authentication/priv/templates/_logon_service_error.tpl:66./apps/zotonic_mod_authentication/priv/templates/_logon_service_error.tpl:137./apps/zotonic_mod_authentication/priv/templates/logon_confirm_form.tpl:28
 #: apps/zotonic_mod_backup/priv/templates/_dialog_backup_upload.tpl:13
 #: apps/zotonic_mod_base/priv/templates/_action_dialog_confirm.tpl:7./apps/zotonic_mod_base/priv/templates/_action_dialog_confirm.tpl:10
@@ -211,7 +211,7 @@ msgstr "Sind Sie sicher, dass Sie alle ACL-Regeln in ihrer aktuell veröffentlic
 #: apps/zotonic_mod_custom_redirect/priv/templates/admin_custom_redirect.tpl:101
 #: apps/zotonic_mod_editor_tinymce/priv/templates/_tinymce_dialog_zmedia_props.tpl:125
 #: apps/zotonic_mod_image_edit/priv/templates/_overlay_image_edit.tpl:134
-#: apps/zotonic_mod_mailinglist/priv/templates/_admin_dialog_mailinglist_combine.tpl:50./apps/zotonic_mod_mailinglist/priv/templates/_dialog_mail_page.tpl:14./apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:33./apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_testaddress.tpl:13./apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailinglist_delete_confirm.tpl:9./apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailinglist_recipients_upload.tpl:26./apps/zotonic_mod_mailinglist/priv/templates/_mailinglist_subscribe_form.tpl:77
+#: apps/zotonic_mod_mailinglist/priv/templates/_admin_dialog_mailinglist_combine.tpl:50./apps/zotonic_mod_mailinglist/priv/templates/_dialog_mail_page.tpl:14./apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:53./apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_testaddress.tpl:13./apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailinglist_delete_confirm.tpl:9./apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailinglist_recipients_upload.tpl:26./apps/zotonic_mod_mailinglist/priv/templates/_mailinglist_subscribe_form.tpl:77
 #: apps/zotonic_mod_oauth2/priv/templates/_dialog_oauth2_app.tpl:69./apps/zotonic_mod_oauth2/priv/templates/_dialog_oauth2_app.tpl:88./apps/zotonic_mod_oauth2/priv/templates/_dialog_oauth2_app_new.tpl:39./apps/zotonic_mod_oauth2/priv/templates/_dialog_oauth2_consumer.tpl:15./apps/zotonic_mod_oauth2/priv/templates/_dialog_oauth2_consumer.tpl:51./apps/zotonic_mod_oauth2/priv/templates/_dialog_oauth2_consumer_new.tpl:26./apps/zotonic_mod_oauth2/priv/templates/oauth2_logon_authorize.tpl:60
 #: apps/zotonic_mod_ssl_letsencrypt/src/mod_ssl_letsencrypt.erl:141./apps/zotonic_mod_ssl_letsencrypt/src/mod_ssl_letsencrypt.erl:149
 #: apps/zotonic_mod_survey/priv/templates/_admin_edit_main_parts.survey.tpl:70./apps/zotonic_mod_survey/priv/templates/_admin_survey_question_editor.tpl:158./apps/zotonic_mod_survey/priv/templates/_dialog_survey_link_person.tpl:113./apps/zotonic_mod_survey/priv/templates/_dialog_survey_link_person_new.tpl:85./apps/zotonic_mod_survey/priv/templates/_dialog_survey_mailinglist.tpl:49./apps/zotonic_mod_survey/priv/templates/_survey_question_page.tpl:81./apps/zotonic_mod_survey/priv/templates/page_admin_frontend_edit.tpl:16
@@ -244,7 +244,7 @@ msgstr "Konfiguration geändert."
 #: apps/zotonic_mod_acl_user_groups/priv/templates/_dialog_acl_rules_try.tpl:22
 #: apps/zotonic_mod_admin/priv/templates/_action_dialog_connect_tab_find.tpl:41./apps/zotonic_mod_admin/priv/templates/_action_dialog_connect_tab_find.tpl:173
 #: apps/zotonic_mod_admin_frontend/priv/templates/page_admin_frontend_edit.tpl:67./apps/zotonic_mod_admin_frontend/priv/templates/page_admin_frontend_edit.tpl:69
-#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:60
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:76./apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_remove.tpl:43
 #: apps/zotonic_mod_editor_tinymce/priv/templates/_admin_configure_module.tpl:30
 #: apps/zotonic_mod_email_status/priv/templates/_dialog_email_status.tpl:4
 #: apps/zotonic_mod_l10n/priv/templates/_admin_configure_module.tpl:8
@@ -555,7 +555,7 @@ msgstr "Umgekehrte Regeln"
 msgid "Save"
 msgstr "Speichern"
 
-#: apps/zotonic_mod_acl_user_groups/priv/templates/admin_acl_rules_upload.tpl:78
+#: apps/zotonic_mod_acl_user_groups/priv/templates/admin_acl_rules_upload.tpl:79
 msgid "Save Upload Permissions"
 msgstr "Upload-Berechtigungen speichern"
 
@@ -756,8 +756,8 @@ msgid "use (acl action)"
 msgstr "verwenden"
 
 #: apps/zotonic_mod_acl_user_groups/priv/templates/_dialog_acl_rules_try.tpl:7
-msgid "use <b>New Private Window</b> (check the <b>File</b> menu of your browser)"
-msgstr "Verwende <b>Neues privates Fenster</b> (prüfe das Menü <b>Datei</b> Ihres Browsers)"
+msgid "use a private or incognito window in your browser"
+msgstr "Verwenden Sie ein privates oder Inkognito-Fenster in Ihrem Browser"
 
 #: apps/zotonic_mod_acl_user_groups/priv/templates/_dialog_acl_rules_try.tpl:8
 msgid "use another browser (eg. Chrome if you are now using Firefox)"
@@ -903,6 +903,10 @@ msgstr "Höhe"
 #: apps/zotonic_mod_admin/priv/templates/admin_media.tpl:82
 msgid "And media can also be viewed on their own page."
 msgstr "Und Medien können auch auf einer eigenen Seite betrachtet werden."
+
+#: apps/zotonic_mod_admin/priv/templates/_admin_edit_content_page_referrers.tpl:39
+msgid "And {n} more."
+msgstr "Und {n} mehr."
 
 #: apps/zotonic_mod_admin/priv/templates/_action_dialog_connect_tab_find.tpl:95
 #: apps/zotonic_mod_admin_merge/priv/templates/_merge_find.tpl:14
@@ -1266,7 +1270,7 @@ msgstr "Dauer"
 msgid "E-mail address"
 msgstr "E-Mail-Adresse"
 
-#: apps/zotonic_mod_admin/priv/templates/_admin_edit_content_page_referrers.tpl:21./apps/zotonic_mod_admin/priv/templates/_rsc_edge.tpl:19./apps/zotonic_mod_admin/priv/templates/admin_edit.tpl:3
+#: apps/zotonic_mod_admin/priv/templates/_admin_edit_content_page_referrers.tpl:24./apps/zotonic_mod_admin/priv/templates/_rsc_edge.tpl:19./apps/zotonic_mod_admin/priv/templates/admin_edit.tpl:3
 #: apps/zotonic_mod_admin_config/priv/templates/admin_config.tpl:66./apps/zotonic_mod_admin_config/src/actions/action_admin_config_dialog_config_edit.erl:50
 #: apps/zotonic_mod_admin_frontend/priv/templates/page_admin_frontend_edit.tpl:3
 #: apps/zotonic_mod_editor_tinymce/priv/templates/_tinymce_dialog_zmedia_props.tpl:121
@@ -1759,6 +1763,10 @@ msgstr "Netzwerk-Verbindungen"
 #: apps/zotonic_mod_admin/priv/templates/_action_dialog_connect.tpl:84./apps/zotonic_mod_admin/priv/templates/_action_dialog_new_rsc.tpl:12
 msgid "New Page"
 msgstr "Neue Seite"
+
+#: apps/zotonic_mod_admin/priv/templates/_admin_edit_content_page_referrers.tpl:17
+msgid "Newest incoming connections."
+msgstr "Neueste eingehende Verbindungen."
 
 #: apps/zotonic_mod_admin/priv/templates/_admin_media_import_list.tpl:188./apps/zotonic_mod_admin/priv/templates/_admin_media_import_list.tpl:190
 msgid "Next &gt;"
@@ -2357,6 +2365,10 @@ msgstr "Der Suchindex wird neu aufgebaut. Je nach Datenbankgröße kann dies seh
 msgid "The site’s data is being reinstalled. Watch the console for messages"
 msgstr "Die Daten der Website werden neu installiert. Beobachten Sie die Konsole auf Meldungen"
 
+#: apps/zotonic_mod_admin/priv/templates/_admin_edit_content_page_referrers.tpl:44
+msgid "There are no incoming connections."
+msgstr "Es bestehen keine eingehenden Verbindungen."
+
 #: apps/zotonic_mod_admin/priv/templates/admin_referrers.tpl:12
 msgid "There are no pages with a connection to the page"
 msgstr "Es gibt keine Seiten mit Verbindungen zu dieser Seite"
@@ -2548,7 +2560,7 @@ msgid "Upload file"
 msgstr "Datei hochladen"
 
 #: apps/zotonic_mod_admin/priv/templates/admin_media.tpl:127
-#: apps/zotonic_mod_fileuploader/src/mod_fileuploader.erl:75
+#: apps/zotonic_mod_fileuploader/src/mod_fileuploader.erl:82
 msgid "Uploaded"
 msgstr "Hochgeladen"
 
@@ -2596,7 +2608,7 @@ msgstr "Alle Verbindungen anzeigen"
 msgid "View all pages from this category"
 msgstr "Alle Seiten aus dieser Kategorie anzeigen"
 
-#: apps/zotonic_mod_admin/priv/templates/_admin_edit_content_page_referrers.tpl:34
+#: apps/zotonic_mod_admin/priv/templates/_admin_edit_content_page_referrers.tpl:48
 msgid "View all referrers"
 msgstr "Alle Querverweise anzeigen"
 
@@ -2729,7 +2741,7 @@ msgstr "von"
 #: apps/zotonic_mod_admin_identity/priv/templates/_admin_overview_list_page1.tpl:32./apps/zotonic_mod_admin_identity/priv/templates/_admin_overview_list_page1.tpl:33./apps/zotonic_mod_admin_identity/priv/templates/admin_users.tpl:73./apps/zotonic_mod_admin_identity/priv/templates/admin_users.tpl:74./apps/zotonic_mod_admin_identity/priv/templates/admin_users.tpl:75
 #: apps/zotonic_mod_admin_predicate/priv/templates/_admin_edges_list.tpl:44
 #: apps/zotonic_mod_comment/priv/templates/admin_comments.tpl:31
-#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:26
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:46
 #: apps/zotonic_mod_oauth2/priv/templates/admin_oauth2_apps.tpl:70./apps/zotonic_mod_oauth2/priv/templates/admin_oauth2_apps.tpl:71./apps/zotonic_mod_oauth2/priv/templates/admin_oauth2_consumers.tpl:77
 msgid "d M Y, H:i"
 msgstr "d M Y, H:i"
@@ -3118,6 +3130,7 @@ msgstr "Verwenden Sie Relay, um E-Mails zu senden"
 #: apps/zotonic_mod_admin_config/priv/templates/admin_config_email.tpl:60./apps/zotonic_mod_admin_config/priv/templates/admin_config_email.tpl:61./apps/zotonic_mod_admin_config/priv/templates/admin_config_email.tpl:87./apps/zotonic_mod_admin_config/priv/templates/admin_config_email.tpl:88
 #: apps/zotonic_mod_admin_identity/priv/templates/_identity_password.tpl:2./apps/zotonic_mod_admin_identity/priv/templates/_identity_password.tpl:3./apps/zotonic_mod_admin_identity/priv/templates/admin_users.tpl:50
 #: apps/zotonic_mod_admin_merge/priv/templates/admin_merge_compare.tpl:81
+#: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:21
 #: apps/zotonic_mod_signup/priv/templates/_signup_form_fields_username.tpl:15
 msgid "Username"
 msgstr "Benutzername"
@@ -3296,6 +3309,7 @@ msgid "E-mail"
 msgstr "E-Mail"
 
 #: apps/zotonic_mod_admin_identity/priv/templates/_admin_overview_list_page1.tpl:10
+#: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:23
 #: apps/zotonic_mod_comment/priv/templates/admin_comments.tpl:22
 #: apps/zotonic_mod_mailinglist/priv/templates/admin_mailinglist_recipients.tpl:69
 #: apps/zotonic_mod_survey/priv/templates/_admin_survey_editor_results.tpl:18./apps/zotonic_mod_survey/priv/templates/_dialog_survey_link_person_new.tpl:29./apps/zotonic_mod_survey/priv/templates/_dialog_survey_link_person_new.tpl:30
@@ -3506,11 +3520,6 @@ msgstr "Diese E-Mail-Adresse wurde zu Ihren persönlichen Daten am hinzugefügt"
 msgid "This is not a valid e-mail address."
 msgstr "Dies ist keine gültige E-Mail Adresse."
 
-#: apps/zotonic_mod_admin_identity/priv/templates/_identity_password.tpl:36
-#: apps/zotonic_mod_signup/priv/templates/_signup_form_fields_username.tpl:40
-msgid "This password does not meet the security requirements"
-msgstr "Dieses Passwort entspricht nicht den Sicherheitsanforderungen"
-
 #: apps/zotonic_mod_admin_identity/priv/templates/_admin_edit_sidebar_identity_live.tpl:57
 msgid "This person is also a user."
 msgstr "Diese Person ist auch ein Benutzer."
@@ -3629,7 +3638,6 @@ msgid "You received this email because you verified your email address. You will
 msgstr "Sie haben diese E-Mail erhalten, weil Sie Ihre E-Mail-Adresse überprüft haben. Aufgrund dieser Anfrage erhalten Sie keine zusätzlichen E-Mails."
 
 #: apps/zotonic_mod_admin_identity/priv/templates/email_identity_verify.tpl:12
-#: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:21
 msgid "Your account name is"
 msgstr "Ihr Kontoname lautet"
 
@@ -3644,6 +3652,12 @@ msgstr "Ihre E-Mail-Adresse ist nun verifiziert."
 #: apps/zotonic_mod_admin_identity/priv/templates/email_admin_new_user.tpl:4
 msgid "Your login details for"
 msgstr "Ihre Anmeldedaten für"
+
+#: apps/zotonic_mod_admin_identity/priv/templates/_identity_password.tpl:36
+#: apps/zotonic_mod_authentication/priv/templates/logon_error/message.tooshort.tpl:1
+#: apps/zotonic_mod_signup/priv/templates/_signup_form_fields_username.tpl:40
+msgid "Your new password is too short or not strong enough. Use a: uppercase letter, lowercase letter, number, and symbol."
+msgstr "Ihr neues Passwort ist zu kurz oder nicht stark genug. Verwenden Sie: Großbuchstaben, Kleinbuchstaben, Zahlen und Sonderzeichen."
 
 #: apps/zotonic_mod_admin_identity/priv/templates/email_admin_new_user.tpl:20
 msgid "Your username is:"
@@ -4137,13 +4151,17 @@ msgstr "Spur"
 msgid "2FA"
 msgstr "2FA"
 
-#: apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:78./apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:120
+#: apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:107./apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:149
 msgid "Add two-factor authentication"
 msgstr "Zwei-Faktor-Authentifizierung hinzufügen"
 
 #: apps/zotonic_mod_auth2fa/priv/templates/_logon_login_set_passcode.tpl:27
 msgid "After you scanned the QR code, please enter the passcode generated by your two-factor authentication app below."
 msgstr "Nachdem Sie den QR-Code gescannt haben, geben Sie unten bitte den von Ihrer Zwei-Faktor-Authentifizierungs-App generierten Passcode ein."
+
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_remove.tpl:29
+msgid "Are you sure you want to remove the two-factor authentication from this account?"
+msgstr "Möchten Sie die Zwei-Faktor-Authentifizierung für dieses Konto wirklich entfernen?"
 
 #: apps/zotonic_mod_auth2fa/priv/templates/admin_auth2fa_config.tpl:44
 msgid "Ask after logging in"
@@ -4161,11 +4179,11 @@ msgstr "Die 2FA-Einstellung wurde geändert."
 msgid "Check the user groups for which two-factor authentication should be forced."
 msgstr "Prüfen Sie die Benutzergruppen, für die die Zwei-Faktor-Authentifizierung erzwungen werden soll."
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:21
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:23
 msgid "Copied to clipboard"
 msgstr "In die Zwischenablage kopiert"
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:16./apps/zotonic_mod_auth2fa/priv/templates/_logon_login_set_passcode.tpl:20
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:17./apps/zotonic_mod_auth2fa/priv/templates/_logon_login_set_passcode.tpl:20
 #: apps/zotonic_mod_menu/priv/templates/_menu_edit_item.tpl:33
 msgid "Copy"
 msgstr "Kopieren"
@@ -4178,7 +4196,7 @@ msgstr "Standardkonfiguration"
 msgid "Define who should use two-factor authentication, this is the default setting for all users."
 msgstr "Legen Sie fest, wer die Zwei-Faktor-Authentifizierung verwenden soll, dies ist die Standardeinstellung für alle Benutzer."
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:32
+#: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:21
 msgid "Enable two-factor authentication..."
 msgstr "Aktivieren Sie die Zwei-Faktor-Authentifizierung..."
 
@@ -4210,13 +4228,17 @@ msgstr "Bei jedem Seitenaufruf erscheint ein Dialog zum Einstellen der Zwei-Fakt
 msgid "On the first page load a dialog appears for setting the two-factor authentication."
 msgstr "Beim ersten Seitenaufruf erscheint ein Dialog zum Einrichten der Zwei-Faktor-Authentifizierung."
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:42./apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:55
+#: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:31./apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:53./apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:68
 msgid "Only the admin can change the two-factor authentication of the admin."
 msgstr "Nur der Admin kann die Zwei-Faktor-Authentifizierung des Admins ändern."
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:56
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:72
 msgid "Only the user themselves can set their new two-factor authentication QR code."
 msgstr "Nur der Benutzer selbst kann seinen neuen QR-Code zur Zwei-Faktor-Authentifizierung festlegen."
+
+#: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:12./apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_remove.tpl:39
+msgid "Only the user themselves or an admin can remove the two-factor authentication."
+msgstr "Nur der Benutzer selbst oder ein Administrator können die Zwei-Faktor-Authentifizierung entfernen."
 
 #: apps/zotonic_mod_auth2fa/priv/templates/admin_auth2fa_config.tpl:33
 msgid "Optional"
@@ -4226,17 +4248,17 @@ msgstr "Optional"
 msgid "Passcode generated by your app"
 msgstr "Von Ihrer App generierter Passcode"
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:10
-msgid "Remove two-factor"
-msgstr "Zwei-Faktor entfernen"
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_remove.tpl:17
+msgid "Please enter the current two-factor authentication code to remove the two-factor authentication from this account."
+msgstr "Bitte geben Sie den aktuellen Zwei-Faktor-Authentifizierungscode ein, um die Zwei-Faktor-Authentifizierung von diesem Konto zu entfernen."
+
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_remove.tpl:34./apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:56
+msgid "Remove two-factor authentication"
+msgstr "Zwei-Faktor-Authentifizierung entfernen"
 
 #: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:7
 msgid "Remove two-factor..."
 msgstr "Zwei-Faktor entfernen..."
-
-#: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:20
-msgid "Reset two-factor..."
-msgstr "Zwei-Faktor zurücksetzen..."
 
 #: apps/zotonic_mod_auth2fa/priv/templates/_logon_login_set_passcode.tpl:2
 msgid "Scan the two-factor authentication QR code with an app such as <a href=\"https://support.google.com/accounts/answer/1066447\">Google Authenticator</a> or <a href=\"https://duo.com/product/trusted-users/two-factor-authentication/duo-mobile\">Duo Mobile</a>."
@@ -4246,7 +4268,7 @@ msgstr "Scannen Sie den QR-Code zur Zwei-Faktor-Authentifizierung mit einer App 
 msgid "Scan the two-factor authentication QR code with an app such as <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://support.google.com/accounts/answer/1066447\">Google Authenticator</a> or <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://duo.com/product/trusted-users/two-factor-authentication/duo-mobile\">Duo Mobile</a>."
 msgstr "Scannen Sie den QR-Code der Zwei-Faktor-Authentifizierung mit einer App wie <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://support.google.com/accounts/answer/1066447\">Google Authenticator</a> oder <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://duo.com/product/trusted-users/two-factor-authentication/duo-mobile\">Duo Mobile</a>."
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:50
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:66
 msgid "Set passcode"
 msgstr "Passcode festlegen"
 
@@ -4254,28 +4276,32 @@ msgstr "Passcode festlegen"
 msgid "Sorry, you are not allowed to change the 2FA settings."
 msgstr "Sorry, Sie dürfen die 2FA-Einstellungen nicht ändern."
 
-#: apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:60
+#: apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:61./apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:89
 msgid "Sorry, you are not allowed to remove the 2FA."
 msgstr "Sorry, Sie dürfen die 2FA-Einstellungen nicht ändern."
 
-#: apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:106
+#: apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:135
 msgid "Sorry, you are not allowed to set the 2FA."
 msgstr "Es ist Ihnen leider nicht gestattet, die 2FA einzurichten."
 
-#: apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:99
+#: apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:128
 #: apps/zotonic_mod_oauth2/src/mod_oauth2.erl:170
 #: apps/zotonic_mod_survey/priv/templates/blocks/_admin_edit_block_li_survey_button.tpl:40
 msgid "Success"
 msgstr "Erfolg"
 
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:51./apps/zotonic_mod_auth2fa/priv/templates/_logon_login_set_passcode.tpl:35
+msgid "The clock of your computer is more than 20 seconds off. This can cause problems with two-factor authentication."
+msgstr "Die Uhr Ihres Computers geht um mehr als 20 Sekunden falsch. Dies kann zu Problemen bei der Zwei-Faktor-Authentifizierung führen."
+
 #: apps/zotonic_mod_auth2fa/priv/templates/admin_auth2fa_config.tpl:35
 msgid "The two-factor authentication can be added per user in the admin or (if available on the site) on their profile page."
 msgstr "Die Zwei-Faktor-Authentifizierung kann pro Benutzer im Adminbereich oder (sofern auf der Site verfügbar) auf seiner Profilseite hinzugefügt werden."
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:44
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:46./apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_remove.tpl:25
 #: apps/zotonic_mod_authentication/priv/templates/logon_error/message.passcode.tpl:2
-msgid "The two-factor authentication passcode did not match. Please try again."
-msgstr "Der Zwei-Faktor-Authentifizierungspasscode stimmte nicht überein. Bitte versuche es erneut."
+msgid "The two-factor authentication passcode is not correct. Please try again."
+msgstr "Der Passcode für die Zwei-Faktor-Authentifizierung ist nicht korrekt. Bitte versuchen Sie es erneut."
 
 #: apps/zotonic_mod_auth2fa/priv/templates/admin_auth2fa_config.tpl:68
 msgid "The user will be prompted to set the two-factor authentication before being allowed to log in."
@@ -4285,11 +4311,7 @@ msgstr "Der Benutzer wird aufgefordert, die Zwei-Faktor-Authentifizierung einzur
 msgid "This is done by showing the two-factor setup dialog on every page load."
 msgstr "Dies geschieht dadurch, dass bei jedem Seitenaufruf der Dialog zur Zwei-Faktor-Einrichtung angezeigt wird."
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:9
-msgid "This will disable the two-factor authentication.<br>The old QR code will not be valid anymore."
-msgstr "Dadurch wird die Zwei-Faktor-Authentifizierung deaktiviert.<br>Der alte QR-Code ist nicht mehr gültig."
-
-#: apps/zotonic_mod_auth2fa/priv/templates/_admin_edit_sidebar.person.tpl:6./apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:132
+#: apps/zotonic_mod_auth2fa/priv/templates/_admin_edit_sidebar.person.tpl:6./apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:161
 msgid "Two-factor authentication"
 msgstr "Zwei-Faktor-Authentifizierung"
 
@@ -4301,7 +4323,7 @@ msgstr "Die Zwei-Faktor-Authentifizierung fügt eine zusätzliche Überprüfung 
 msgid "Two-factor authentication configuration"
 msgstr "Konfiguration der Zwei-Faktor-Authentifizierung"
 
-#: apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:100
+#: apps/zotonic_mod_auth2fa/src/mod_auth2fa.erl:129
 msgid "Two-factor authentication has been enabled for your account."
 msgstr "Für Ihr Konto wurde die Zwei-Faktor-Authentifizierung aktiviert."
 
@@ -4317,7 +4339,7 @@ msgstr "Für dieses Konto ist die Zwei-Faktor-Authentifizierung aktiviert."
 msgid "Two-factor authentication is not enabled"
 msgstr "Die Zwei-Faktor-Authentifizierung ist nicht aktiviert"
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:27
+#: apps/zotonic_mod_auth2fa/priv/templates/_auth2fa_user_actions.tpl:16
 msgid "Two-factor authentication is not enabled for this account."
 msgstr "Die Zwei-Faktor-Authentifizierung ist für dieses Konto nicht aktiviert."
 
@@ -4326,13 +4348,17 @@ msgstr "Die Zwei-Faktor-Authentifizierung ist für dieses Konto nicht aktiviert.
 msgid "Two-factor passcode"
 msgstr "Zwei-Faktor-Passcode"
 
-#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:41./apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:42
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:43./apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:44./apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_remove.tpl:22./apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_remove.tpl:23
 msgid "Type the code generated by your app"
 msgstr "Geben Sie den von Ihrer App generierten Code ein"
 
 #: apps/zotonic_mod_auth2fa/priv/templates/admin_auth2fa_config.tpl:73
 msgid "User group configuration"
 msgstr "Konfiguration der Benutzergruppe"
+
+#: apps/zotonic_mod_auth2fa/priv/templates/_dialog_auth2fa_passcode.tpl:51./apps/zotonic_mod_auth2fa/priv/templates/_logon_login_set_passcode.tpl:35
+msgid "Warning."
+msgstr "Warnung."
 
 #: apps/zotonic_mod_auth2fa/priv/templates/admin_auth2fa_config.tpl:17
 msgid "You can use two-factor authentication apps such as <a rel=\"noopener noreferrer\" target=\"_blank\" href=\"https://support.google.com/accounts/answer/1066447\">Google Authenticator</a> or <a rel=\"noopener noreferrer\" target=\"_blank\" href=\"https://duo.com/product/trusted-users/two-factor-authentication/duo-mobile\">Duo Mobile</a>."
@@ -4400,9 +4426,9 @@ msgstr "Prüfen Sie Ihre E-Mail"
 msgid "Checking the reset code…"
 msgstr "Prüfen des Reset-Codes…"
 
-#: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:25
-msgid "Click on the link below to enter a new password. When clicking doesn't work, please copy and paste the whole link."
-msgstr "Klicken Sie auf den unten stehenden Link, um ein neues Passwort einzugeben. Wenn das Anklicken nicht funktioniert, kopieren Sie bitte den gesamten Link und fügen ihn ein."
+#: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:27
+msgid "Click on the link to enter a new password or copy and paste the whole link."
+msgstr "Klicken Sie auf den Link, um ein neues Passwort einzugeben, oder kopieren Sie den gesamten Link und fügen Sie ihn ein."
 
 #: apps/zotonic_mod_authentication/priv/templates/_logon_service_error.tpl:16
 msgid "Close this window and log on if you are already a user of {site}."
@@ -4459,10 +4485,6 @@ msgstr "Aktivieren Sie <em>mod_twitter</em> , um Twitter-Einstellungen zu sehen.
 msgid "Enable the signup module to automatically sign up users that are authenticating via the services below."
 msgstr "Aktivieren Sie das Anmeldemodul, um Benutzer, die sich über die unten aufgeführten Dienste authentifizieren, automatisch anzumelden."
 
-#: apps/zotonic_mod_authentication/priv/templates/_logon_reset_title.tpl:14
-msgid "Enter the new password for your account"
-msgstr "Geben Sie das neue Passwort für Ihr Konto ein"
-
 #: apps/zotonic_mod_authentication/priv/templates/_logon_change_title.tpl:7
 msgid "Enter the new password for your account <strong>{username}</strong>."
 msgstr "Geben Sie das neue Passwort für Ihr Konto ein: <strong>{username}</strong>."
@@ -4490,7 +4512,7 @@ msgstr "Erwartete ein anderes Konto"
 msgid "External Services"
 msgstr "Externe Dienste"
 
-#: apps/zotonic_mod_authentication/priv/templates/logon_error/message.dataleak.tpl:3
+#: apps/zotonic_mod_authentication/priv/templates/logon_error/message.dataleak.tpl:2
 msgid "For more information visit <a target=\"_blank\" rel=\"noreferrer noopener\" href=\"https://haveibeenpwned.com/Passwords\">{title}</a>"
 msgstr "Weitere Informationen finden Sie unter <a target=\"_blank\" rel=\"noreferrer noopener\" href=\"https://haveibeenpwned.com/Passwords\">{title}</a>"
 
@@ -4498,7 +4520,7 @@ msgstr "Weitere Informationen finden Sie unter <a target=\"_blank\" rel=\"norefe
 msgid "For security reasons, password reset codes are only kept for a limited amount of time and can only be used once."
 msgstr "Aus Sicherheitsgründen werden Codes zum Zurücksetzen des Passworts nur für eine begrenzte Zeit aufbewahrt und können nur einmal verwendet werden."
 
-#: apps/zotonic_mod_authentication/priv/templates/_logon_change_form_fields.tpl:9./apps/zotonic_mod_authentication/priv/templates/_logon_login_support.tpl:3./apps/zotonic_mod_authentication/priv/templates/logon_error/message.passcode.tpl:8./apps/zotonic_mod_authentication/priv/templates/logon_error/message.pw.tpl:5
+#: apps/zotonic_mod_authentication/priv/templates/_logon_change_form_fields.tpl:9./apps/zotonic_mod_authentication/priv/templates/_logon_login_support.tpl:3./apps/zotonic_mod_authentication/priv/templates/logon_error/message.passcode.tpl:8./apps/zotonic_mod_authentication/priv/templates/logon_error/message.pw.tpl:2
 msgid "Forgot your password?"
 msgstr "Haben Sie Ihr Passwort vergessen?"
 
@@ -4547,17 +4569,17 @@ msgstr "Ich möchte ein neues Konto erstellen"
 msgid "If you are already a user of {site} then <a href=\"{logon_url}\">log on</a>."
 msgstr "Wenn Sie bereits Benutzer von {site} sind, dann <a href=\"{logon_url}\">melden Sie sich an</a>."
 
-#: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:31
-msgid "If you didn't request a password reset, you can safely ignore this email. Maybe someone made an error typing his or her email address."
-msgstr "Wenn Sie keine Passwortrücksetzung angefordert haben, können Sie diese E-Mail getrost ignorieren. Vielleicht hat jemand einen Fehler bei der Eingabe seiner E-Mail-Adresse gemacht."
-
 #: apps/zotonic_mod_authentication/priv/templates/_logon_box.tpl:93./apps/zotonic_mod_authentication/priv/templates/_logon_box.tpl:109
 msgid "If you do not receive the email within a few minutes, please check your spam folder."
 msgstr "Wenn Sie die E-Mail nicht innerhalb weniger Minuten erhalten, überprüfen Sie bitte Ihren Spam-Ordner."
 
+#: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:33
+msgid "If you don't want to reset your password, you can ignore this email. Maybe someone made an error typing his or her email address."
+msgstr "Wenn Sie Ihr Passwort nicht zurücksetzen möchten, können Sie diese E-Mail ignorieren. Möglicherweise hat jemand beim Eintippen seiner E-Mail-Adresse einen Fehler gemacht."
+
 #: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:14
-msgid "If you think you have an account and were expecting this email, please try again using the email address you gave when you created your account."
-msgstr "Wenn Sie der Meinung sind, dass Sie über ein Konto verfügen und diese E-Mail erwartet haben, versuchen Sie es bitte erneut mit der E-Mail-Adresse, die Sie bei der Erstellung Ihres Kontos angegeben haben."
+msgid "If you think you do have an account, please try again using the correct email address."
+msgstr "Wenn Sie glauben, dass Sie über ein Konto verfügen, versuchen Sie es bitte erneut mit der richtigen E-Mail-Adresse."
 
 #: apps/zotonic_mod_authentication/priv/templates/_logon_box.tpl:108
 msgid "In the email you will find instructions on how to confirm your account."
@@ -4587,6 +4609,10 @@ msgstr "Melden Sie sich mit an"
 msgid "Log out"
 msgstr "Ausloggen"
 
+#: apps/zotonic_mod_authentication/priv/templates/logon_error/message.user_not_enabled.tpl:1
+msgid "Make sure you have verified your e-mail address."
+msgstr "Stellen Sie sicher, dass Sie Ihre E-Mail-Adresse bestätigt haben."
+
 #: apps/zotonic_mod_authentication/priv/templates/_logon_service_error.tpl:101
 msgid "Multiple accounts"
 msgstr "Mehrere Konten"
@@ -4611,6 +4637,10 @@ msgstr "Einen Augenblick bitte..."
 msgid "Passcode"
 msgstr "Passcode"
 
+#: apps/zotonic_mod_authentication/priv/templates/logon_error/message.dataleak.tpl:1
+msgid "Please choose a different password as this password has been found in a public list of passwords that have appeared in a data breach."
+msgstr "Bitte wählen Sie ein anderes Passwort, da dieses Passwort in einer öffentlichen Liste mit Passwörtern gefunden wurde, die bei einem Datenleck aufgetaucht sind."
+
 #: apps/zotonic_mod_authentication/priv/templates/logon_confirm_form.tpl:8
 msgid "Please confirm your"
 msgstr "Bitte bestätigen Sie Ihr"
@@ -4618,6 +4648,10 @@ msgstr "Bitte bestätigen Sie Ihr"
 #: apps/zotonic_mod_authentication/priv/templates/_logon_reset_title.tpl:7
 msgid "Please enter a new password"
 msgstr "Bitte geben Sie ein neues Passwort ein"
+
+#: apps/zotonic_mod_authentication/priv/templates/_logon_reset_title.tpl:14
+msgid "Please enter a new password for your account"
+msgstr "Bitte geben Sie ein neues Passwort für Ihr Konto ein"
 
 #: apps/zotonic_mod_authentication/priv/templates/logon_error/message.need_passcode.tpl:1
 msgid "Please enter the two-factor authentication passcode."
@@ -4696,21 +4730,13 @@ msgstr "Ihr Passwort-Reset-Code ist leider unbekannt oder abgelaufen"
 msgid "Stay logged on unless I log off."
 msgstr "Bleiben Sie angemeldet, es sei denn, ich melde mich ab."
 
-#: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:21
-msgid "The email address associated with your account is"
-msgstr "Die mit Ihrem Konto verknüpfte E-Mail-Adresse lautet"
-
-#: apps/zotonic_mod_authentication/priv/templates/logon_error/message.dataleak.tpl:1
-msgid "The new password has appeared in a data leak, which puts your account at risk of compromise."
-msgstr "Das neue Passwort ist durch ein Datenleck aufgetaucht, wodurch Ihr Konto gefährdet ist."
-
 #: apps/zotonic_mod_authentication/priv/templates/logon_error/message.password_change_match.tpl:2
 msgid "The new password must be different from the previous one. Please try again."
 msgstr "Das neue Passwort muss sich vom vorherigen unterscheiden. Bitte versuche es erneut."
 
 #: apps/zotonic_mod_authentication/priv/templates/logon_error/message.set_passcode_error.tpl:2
-msgid "The passcode you gave was not correct, please try again."
-msgstr "Der von Ihnen eingegebene Passcode war nicht korrekt. Bitte versuchen Sie es erneut."
+msgid "The passcode you entered was not correct, please try again."
+msgstr "Der eingegebene Passcode war nicht korrekt. Bitte versuchen Sie es erneut."
 
 #: apps/zotonic_mod_authentication/priv/templates/admin_authentication_services.tpl:29
 msgid "The redirect URL for OAuth configurations is:"
@@ -4754,7 +4780,11 @@ msgstr "Um diese Seite anzuzeigen, müssen Sie über andere Zugriffsrechte verf�
 msgid "Too many retries."
 msgstr "Zu viele Wiederholungsversuche."
 
-#: apps/zotonic_mod_authentication/priv/templates/logon_error/message.dataleak.tpl:2./apps/zotonic_mod_authentication/priv/templates/logon_error/message.tooshort.tpl:2./apps/zotonic_mod_authentication/priv/templates/logon_error/message.unequal.tpl:2
+#: apps/zotonic_mod_authentication/priv/templates/logon_error/message.dataleak.tpl:3
+msgid "Use a: uppercase letter, lowercase letter, number, and symbol."
+msgstr "Verwenden Sie: Großbuchstaben, Kleinbuchstaben, Zahlen und Symbole."
+
+#: apps/zotonic_mod_authentication/priv/templates/logon_error/message.unequal.tpl:2
 msgid "Use non alphabetical characters, digits and upper/lower case letters to make it harder to guess."
 msgstr "Verwenden Sie nicht alphabetische Zeichen, Ziffern und Groß-/Kleinbuchstaben, um das Erraten zu erschweren."
 
@@ -4814,9 +4844,9 @@ msgstr "Sie können versuchen, sich als ein anderer Benutzer anzumelden."
 msgid "You need to be allowed to edit the system configuration to view or change the configured App Keys."
 msgstr "Sie müssen berechtigt sein, die Systemkonfiguration zu bearbeiten, um die konfigurierten App Keys anzuzeigen oder zu ändern."
 
-#: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:37
-msgid "You received this email because you requested a password reset for your account by entering your username or email address. You will not receive any additional emails because of this request."
-msgstr "Sie haben diese E-Mail erhalten, weil Sie durch Zurückgeben Ihres Benutzernamens oder Ihrer E-Mail-Adresse ein Zurücksetzen des Passworts für Ihr Konto angefordert haben. Aufgrund dieser Anfrage erhalten Sie keine zusätzlichen E-Mails."
+#: apps/zotonic_mod_authentication/priv/templates/email_password_reset.tpl:39
+msgid "You received this email as you entered your username or email address to reset your password. You will not receive any other emails because of this request."
+msgstr "Sie haben diese E-Mail erhalten, als Sie Ihren Benutzernamen oder Ihre E-Mail-Adresse eingegeben haben, um Ihr Passwort zurückzusetzen. Sie werden aufgrund dieser Anfrage keine weiteren E-Mails erhalten."
 
 #: apps/zotonic_mod_authentication/priv/templates/_logon_service_error.tpl:111
 msgid "You used another account on {service} than was expected."
@@ -4835,8 +4865,8 @@ msgid "Your account on {site} is disabled."
 msgstr "Ihr Konto auf {site} ist deaktiviert."
 
 #: apps/zotonic_mod_authentication/priv/templates/_logon_reset_title.tpl:9
-msgid "Your current password is expired, does not meet our security requirements, or has been found in <a href=\"https://haveibeenpwned.com/Passwords\" target=\"_blank\" rel=\"noreferrer noopener\">public records</a>."
-msgstr "Ihr aktuelles Passwort ist abgelaufen, entspricht nicht unseren Sicherheitsanforderungen oder wurde in <a href=\"https://haveibeenpwned.com/Passwords\" target=\"_blank\" rel=\"noreferrer noopener\">öffentlichen Aufzeichnungen</a>gefunden."
+msgid "Your current password has expired, is not strong enough, or has been found in <a href=\"https://haveibeenpwned.com/Passwords\" target=\"_blank\" rel=\"noreferrer noopener\">public records containing passwords appearing in data breaches</a>."
+msgstr "Ihr aktuelles Passwort ist abgelaufen, nicht stark genug oder wurde in <a href=\"https://haveibeenpwned.com/Passwords\" target=\"_blank\" rel=\"noreferrer noopener\">öffentlichen Aufzeichnungen gefunden, die Passwörter enthalten, die bei</a>Datenlecks auftauchen."
 
 #: apps/zotonic_mod_authentication/priv/templates/_logon_reminder_form_fields.tpl:2
 msgid "Your email"
@@ -4845,10 +4875,6 @@ msgstr "Ihre E-Mail"
 #: apps/zotonic_mod_authentication/priv/templates/_logon_reminder_admin_form_fields.tpl:2
 msgid "Your email or username"
 msgstr "Ihre E-Mail oder Ihr Benutzername"
-
-#: apps/zotonic_mod_authentication/priv/templates/logon_error/message.tooshort.tpl:1
-msgid "Your new password is too short or too simple."
-msgstr "Ihr neues Passwort ist zu kurz oder zu einfach."
 
 #: apps/zotonic_mod_authentication/priv/templates/_logon_box.tpl:31
 msgid "Your password has been changed"
@@ -5652,6 +5678,42 @@ msgstr "Diese Website verwendet Cookies"
 #: apps/zotonic_mod_cookie_consent/priv/templates/_admin_edit_content.name.cookie_consent.tpl:40
 msgid "To add more information about the use of cookies, either use the content field below or add a 'relation' in the page connections."
 msgstr "Um weitere Informationen über die Verwendung von Cookies hinzuzufügen, verwenden Sie entweder das Inhaltsfeld unten oder fügen Sie eine „Relation“ in den Seitenverbindungen hinzu."
+
+#: apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:15
+msgid "<b>NB</b> connected pages and images have their own rights."
+msgstr "<b>NB</b> Verbundene Seiten und Bilder unterliegen ihren eigenen Rechten."
+
+#: apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:21
+msgid "All Rights Reserved"
+msgstr "Alle Rechte vorbehalten"
+
+#: apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:41./apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:42
+msgid "Attribution"
+msgstr "Namensnennung"
+
+#: apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:18
+msgid "License"
+msgstr "Lizenz"
+
+#: apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:8
+msgid "License and attribution"
+msgstr "Lizenz und Namensnennung"
+
+#: apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:52
+msgid "More about licenses:"
+msgstr "Mehr zu Lizenzen:"
+
+#: apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:22
+msgid "Public Domain"
+msgstr "Public Domain"
+
+#: apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:15
+msgid "The license and the attribution of this page."
+msgstr "Die Lizenz und die Zuordnung dieser Seite."
+
+#: apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:47./apps/zotonic_mod_copyright/priv/templates/_admin_edit_sidebar.tpl:48
+msgid "Year"
+msgstr "Jahr"
 
 #: apps/zotonic_mod_custom_redirect/priv/templates/admin_custom_redirect.tpl:27
 #: apps/zotonic_mod_filestore/priv/templates/admin_filestore.tpl:168
@@ -6743,7 +6805,7 @@ msgstr "Diese Einstellungen dürfen Sie nicht ändern."
 msgid "Zotonic can store uploaded and resized files in the cloud. Here you can configure the location and access keys for the cloud service."
 msgstr "Zotonic kann hochgeladene und in der Größe veränderte Dateien in der Cloud speichern. Hier können Sie den Speicherort und die Zugriffsschlüssel für den Cloud-Dienst konfigurieren."
 
-#: apps/zotonic_mod_fileuploader/src/mod_fileuploader.erl:78
+#: apps/zotonic_mod_fileuploader/src/mod_fileuploader.erl:85
 msgid "Could not upload"
 msgstr "Konnte nicht hochgeladen werden"
 
@@ -7393,7 +7455,7 @@ msgstr "Mailingliste kombinieren"
 msgid "Combine…"
 msgstr "Kombinieren…"
 
-#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:140
+#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:158
 msgid "Confirm mailing cancelation."
 msgstr "Bestätigen Sie die Stornierung der Sendung."
 
@@ -7413,7 +7475,7 @@ msgstr "Der Empfänger konnte nicht hinzugefügt werden."
 msgid "Could not delete the mailing list."
 msgstr "Die Mailingliste konnte nicht gelöscht werden."
 
-#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:259
+#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:280
 msgid "Could not save the opt-out preference."
 msgstr "Die Deaktivierungseinstellung konnte nicht gespeichert werden."
 
@@ -7494,6 +7556,10 @@ msgstr "Extern verwaltete Liste &mdash; Keine Links zum Abbestellen / Abonnieren
 msgid "First name"
 msgstr "Vornamen"
 
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:21
+msgid "Forget previous e-mails, mail all recipients again."
+msgstr "Vorherige E-Mails vergessen, alle Empfänger erneut anschreiben."
+
 #: apps/zotonic_mod_mailinglist/priv/templates/email_mailinglist_welcome.tpl:7
 msgid "From now on you will receive mail from our mailing list."
 msgstr "Ab sofort erhalten Sie Post von unserer Mailingliste."
@@ -7526,17 +7592,13 @@ msgstr "Hier können Sie Abonnements ändern, die mit Ihrer E-Mail-Adresse <b>{e
 msgid "If you opt-out then it is still possible to subscribe to mailing lists using an e-mail address (instead of your account)."
 msgstr "Wenn Sie sich abmelden, ist es weiterhin möglich, Mailinglisten mit einer E-Mail-Adresse (anstelle Ihres Kontos) zu abonnieren."
 
-#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:6
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:16
 msgid "It appears you have sent\n"
-"    this page once already to this list. If you send it again, only\n"
-"    the recipients that did not yet receive the mail will get it. As a\n"
-"    safety-caution, it is impossible to send the same page twice to\n"
-"    the same e-mail address."
-msgstr "Es scheint, dass Sie\n"
-"    diese Seite schon einmal an diese Liste gesendet haben. Wenn Sie sie erneut senden, erhalten sie nur\n"
-"    die Empfänger, die die Mail noch nicht erhalten haben. Als\n"
-"    Sicherheitsvorkehrung ist es unmöglich, die gleiche Seite zweimal an\n"
-"    die gleiche E-Mail-Adresse zu senden."
+"        this page once already to this list. If you send it again, only\n"
+"        the recipients that did not yet receive the mail will get it. As a\n"
+"        safety-caution, it is impossible to send the same page twice to\n"
+"        the same e-mail address."
+msgstr ""
 
 #: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_cancel_confirm.tpl:4
 msgid "Keep mailing"
@@ -7554,7 +7616,7 @@ msgstr "Mailing-Listen"
 msgid "Mailing list"
 msgstr "Mailingliste"
 
-#: apps/zotonic_mod_mailinglist/priv/templates/_admin_mailing_status_overview.tpl:5./apps/zotonic_mod_mailinglist/priv/templates/admin_mailinglist.tpl:7./apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:512
+#: apps/zotonic_mod_mailinglist/priv/templates/_admin_mailing_status_overview.tpl:5./apps/zotonic_mod_mailinglist/priv/templates/admin_mailinglist.tpl:7./apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:610
 msgid "Mailing lists"
 msgstr "Mailinglisten"
 
@@ -7594,6 +7656,10 @@ msgstr "Anzahl von Empfängern auf dieser Liste:"
 msgid "Only keep recipients on this list that appear <em>on both lists</em>"
 msgstr "Nur Empfänger auf dieser Liste behalten, die auf beiden Listen <em>erscheinen</em>"
 
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:30
+msgid "Only send to recipients whose preferred language match the translations of the mailing."
+msgstr "Senden Sie nur an Empfänger, deren bevorzugte Sprache mit den Übersetzungen des Mailings übereinstimmt."
+
 #: apps/zotonic_mod_mailinglist/priv/templates/_admin_dialog_mailinglist_combine.tpl:46
 msgid "Only the enabled email addresses are used, the subscriber connections are not used and are not affected."
 msgstr "Es werden nur die aktivierten E-Mail-Adressen verwendet, die Teilnehmerverbindungen werden nicht verwendet und sind nicht betroffen."
@@ -7626,9 +7692,9 @@ msgstr "Seiten, die mit der unten stehenden Abfrage übereinstimmen."
 msgid "Perform operation"
 msgstr "Bedienung durchführen"
 
-#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:3
-msgid "Please confirm that you want to send the page"
-msgstr "Bitte bestätigen Sie, dass Sie die Seite versenden möchten"
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:4
+msgid "Please confirm that you want to send the page <i>{page}</i> to the list <i>{list}</i>."
+msgstr "Bitte bestätigen Sie, dass Sie die Seite <i>{page}</i> an die Liste <i>{list}</i>senden möchten."
 
 #: apps/zotonic_mod_mailinglist/priv/templates/mailinglist_confirm.tpl:12
 msgid "Please confirm your subscription"
@@ -7650,7 +7716,7 @@ msgstr "Bitte geben Sie die E-Mail-Adresse ein, an die Sie diese Seite senden m�
 msgid "Please follow"
 msgstr "Bitte folgen"
 
-#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:6
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:16
 msgid "Please note:"
 msgstr "Bitte beachten:"
 
@@ -7695,7 +7761,7 @@ msgstr "Entfernen Sie diesen Empfänger. Kein Rückgängig machen möglich."
 msgid "Removed subscription."
 msgstr "Abonnement entfernt."
 
-#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:257
+#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:278
 msgid "Saved the opt-out preference."
 msgstr "Die Opt-out-Einstellung wurde gespeichert."
 
@@ -7711,7 +7777,7 @@ msgstr "Auswählen..."
 msgid "Send e-mail"
 msgstr "E-Mail senden"
 
-#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:34
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:54
 msgid "Send mailing"
 msgstr "Mailing senden"
 
@@ -7723,15 +7789,15 @@ msgstr "Test-Mailing senden"
 msgid "Send test to address"
 msgstr "Test an Adresse senden"
 
-#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:26
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:46
 msgid "Send the mailing automatically after the publication start date of"
 msgstr "Senden Sie das Mailing automatisch nach dem Veröffentlichungsstartdatum von"
 
-#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:24
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:44
 msgid "Send the mailing immediately after the \"published\" checkbox has been checked in the edit page."
 msgstr "Senden Sie das Mailing sofort, nachdem das Kontrollkästchen \"veröffentlicht\" auf der Bearbeitungsseite aktiviert wurde."
 
-#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:19
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:39
 msgid "Send the mailing right now, but do not include a link back to the website."
 msgstr "Schicken Sie das Mailing gleich ab, aber fügen Sie keinen Link zurück auf die Website ein."
 
@@ -7763,11 +7829,11 @@ msgstr "Absendername für E-Mails (optional)"
 msgid "Sending the e-mail..."
 msgstr "Versenden der E-Mail....."
 
-#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:190
+#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:211
 msgid "Sending the page to"
 msgstr "Senden der Seite an"
 
-#: apps/zotonic_mod_mailinglist/src/actions/action_mailinglist_mailing_page_test.erl:47
+#: apps/zotonic_mod_mailinglist/src/actions/action_mailinglist_mailing_page_test.erl:48
 msgid "Sending the page to the test mailing list..."
 msgstr "Senden der Seite an die Test-Mailingliste......"
 
@@ -7835,7 +7901,7 @@ msgstr "Vielen Dank! Sie sind nun abgemeldet."
 msgid "The confirmation key is unknown. Either you already confirmed or something else went wrong."
 msgstr "Der Bestätigungsschlüssel ist unbekannt. Entweder haben Sie bereits bestätigt oder es ist etwas anderes schief gelaufen."
 
-#: apps/zotonic_mod_mailinglist/src/actions/action_mailinglist_dialog_mailing_page.erl:57
+#: apps/zotonic_mod_mailinglist/src/actions/action_mailinglist_dialog_mailing_page.erl:68
 msgid "The e-mails are being sent..."
 msgstr "Die E-Mails werden verschickt..."
 
@@ -7843,15 +7909,15 @@ msgstr "Die E-Mails werden verschickt..."
 msgid "The key in your link does not match any subscription. Either you already unsubscribed, or the mailing list has been deleted."
 msgstr "Der Schlüssel in Ihrem Link stimmt mit keinem Abonnement überein. Entweder haben Sie sich bereits abgemeldet, oder die Mailingliste wurde gelöscht."
 
-#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:153
+#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:171
 msgid "The mailing has been canceled."
 msgstr "Das Mailing wurde abgebrochen."
 
-#: apps/zotonic_mod_mailinglist/src/actions/action_mailinglist_dialog_mailing_page.erl:60
+#: apps/zotonic_mod_mailinglist/src/actions/action_mailinglist_dialog_mailing_page.erl:71
 msgid "The mailing will be send when the page becomes visible."
 msgstr "Das Mailing wird gesendet, wenn die Seite sichtbar wird."
 
-#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:15
+#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:36
 msgid "The page you are trying to e-mail is not yet published. What do you want to do?"
 msgstr "Die Seite, die Sie per E-Mail zu erreichen versuchen, ist noch nicht veröffentlicht. Was möchten Sie tun?"
 
@@ -7859,11 +7925,11 @@ msgstr "Die Seite, die Sie per E-Mail zu erreichen versuchen, ist noch nicht ver
 msgid "The recipients list of the mailing list will be deleted as well."
 msgstr "Die Empfängerliste der Mailingliste wird ebenfalls gelöscht."
 
-#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:163
+#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:181
 msgid "The statistics have been cleared."
 msgstr "Die Statistik wurde gelöscht."
 
-#: apps/zotonic_mod_mailinglist/src/actions/action_mailinglist_mailing_page_test.erl:53
+#: apps/zotonic_mod_mailinglist/src/actions/action_mailinglist_mailing_page_test.erl:54
 msgid "There is no mailing list with the name ‘mailinglist_test’."
 msgstr "Es gibt keine Mailingliste mit dem Namen 'mailinglist_test'."
 
@@ -7939,7 +8005,7 @@ msgstr "Wenn Sie keine Mails mehr empfangen wollen, dann"
 msgid "You are not allowed to add or enable recipients."
 msgstr "Es ist Ihnen nicht erlaubt, Empfänger hinzuzufügen oder zu aktivieren."
 
-#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:145./apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:155
+#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:163./apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:173
 msgid "You are not allowed to cancel this mailing."
 msgstr "Sie sind nicht berechtigt, dieses Mailing zu stornieren."
 
@@ -7951,15 +8017,15 @@ msgstr "Sie dürfen die Mailingliste nicht löschen."
 msgid "You are not allowed to edit recipients."
 msgstr "Sie sind nicht berechtigt, Empfänger zu bearbeiten."
 
-#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:165./apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:181
+#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:183./apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:199
 msgid "You are not allowed to reset this mailing."
 msgstr "Es ist Ihnen nicht erlaubt, dieses Mailing zurückzusetzen."
 
-#: apps/zotonic_mod_mailinglist/src/actions/action_mailinglist_mailing_page_test.erl:50
+#: apps/zotonic_mod_mailinglist/src/actions/action_mailinglist_mailing_page_test.erl:51
 msgid "You are not allowed to send mail to the test mailing list."
 msgstr "Es ist nicht erlaubt, E-Mails an die Test-Mailingliste zu senden."
 
-#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:193
+#: apps/zotonic_mod_mailinglist/src/mod_mailinglist.erl:214
 msgid "You are not allowed to send this page."
 msgstr "Es ist Ihnen nicht gestattet, diese Seite zu versenden."
 
@@ -8090,10 +8156,6 @@ msgstr "senden an"
 #: apps/zotonic_mod_mailinglist/priv/templates/email_mailinglist_confirm.tpl:11
 msgid "this link to confirm"
 msgstr "dieser Link zur Bestätigung"
-
-#: apps/zotonic_mod_mailinglist/priv/templates/_dialog_mailing_page.tpl:3
-msgid "to the list"
-msgstr "zur Liste"
 
 #: apps/zotonic_mod_mailinglist/priv/templates/email_mailinglist_welcome.tpl:7
 msgid "with your e-mail address"
@@ -10074,6 +10136,7 @@ msgid "Strongly Disagree"
 msgstr "Stark ablehnen"
 
 #: apps/zotonic_mod_survey/priv/templates/_survey_question_page.tpl:86./apps/zotonic_mod_survey/priv/templates/_survey_question_page.tpl:91
+#: apps/zotonic_mod_wires/src/scomps/scomp_wires_button.erl:31
 msgid "Submit"
 msgstr "Senden"
 
@@ -10865,13 +10928,13 @@ msgstr "Es ist nicht erlaubt, das Seitenverzeichnis zu erstellen"
 msgid "Optional Git url to checkout the site. An existing <tt>config</tt> file will be overwritten."
 msgstr "Optionale Git-URL zum Auschecken der Site. Eine vorhandene <tt>Config</tt> Datei wird überschrieben."
 
+#: apps/zotonic_mod_zotonic_site_management/priv/templates/addsite.tpl:169
+msgid "Please only use: a…z, 0…9, and . (period)."
+msgstr "Bitte verwenden Sie ausschließlich: a…z, 0…9 und . (Punkt)."
+
 #: apps/zotonic_mod_zotonic_site_management/priv/templates/addsite.tpl:136
 msgid "Please use a valid hostname."
 msgstr "Bitte verwenden Sie einen gültigen Hostnamen."
-
-#: apps/zotonic_mod_zotonic_site_management/priv/templates/addsite.tpl:169
-msgid "Please use only a…z and 0…9 and . characters."
-msgstr "Bitte verwenden Sie nur die Zeichen…z und 0…9 und ."
 
 #: apps/zotonic_mod_zotonic_site_management/priv/templates/addsite.tpl:125./apps/zotonic_mod_zotonic_site_management/priv/templates/addsite.tpl:158
 msgid "Please use only a…z and 0…9 characters."
