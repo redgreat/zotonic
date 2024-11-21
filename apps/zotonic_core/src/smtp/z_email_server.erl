@@ -42,7 +42,7 @@
 
     is_sender_enabled/2,
     is_sender_enabled/3,
-    is_recipient_blocked/2,
+    is_recipient_ok/2,
 
     get_email_from/1
 ]).
@@ -194,10 +194,10 @@ recipient_is_user_or_admin(Id, RecipientEmail, Context) ->
                      end,
                      m_identity:get_rsc_by_type(Id, email, Context)).
 
-is_recipient_blocked(Recipient, Context) ->
+is_recipient_ok(Recipient, Context) ->
     RecipientEmail = recipient_email_address(Recipient),
-    case z_notifier:first( #email_is_blocked{ recipient = RecipientEmail }, Context) of
-        undefined -> false;
+    case z_notifier:first( #email_is_recipient_ok{ recipient = RecipientEmail }, Context) of
+        undefined -> true;
         true -> true;
         false -> false
     end.
@@ -393,7 +393,7 @@ handle_info(poll, State) ->
     Time = case IsSending of
         false -> 10000;
         true -> 2000
-    end, 
+    end,
     State2 = State1#state{
         poll_ref = timer:send_after(Time, poll)
     },
@@ -567,8 +567,8 @@ update_config(State) ->
         case SmtpRelay of
             true ->
                 [{relay, z_config:get(smtp_host, "localhost")},
-                 {port, z_config:get(smtp_port, ?SMTP_PORT_PLAIN_TEXT)},
-                 {ssl, z_config:get(smtp_ssl, false)}]
+                 {port, z_config:get(smtp_port, ?SMTP_PORT_PLAIN_TEXT)}
+                ]
                 ++ case {z_config:get(smtp_username),
                          z_config:get(smtp_password)} of
                         {undefined, undefined} ->
@@ -577,7 +577,11 @@ update_config(State) ->
                             [{auth, always},
                              {username, User},
                              {password, Pass}]
-                   end;
+                   end
+                ++ case z_config:get(smtp_ssl, false) of
+                    true -> [ {tls, always} ];
+                    false -> []
+                end;
             false ->
                 []
         end,
@@ -736,10 +740,10 @@ check_templates_1([ T | Ts ], Context) ->
 drop_blocked_email(Id, Recipient, Email, Context) ->
     delete_emailq(Id),
     LogEmail = #log_email{
-        severity = ?LOG_LEVEL_ERROR,
-        mailer_status = error,
-        mailer_message = <<"Recipient blocked by Zotonic module (#email_is_blocked)">>,
-        props = [{reason, recipient_blocked}],
+        severity = ?LOG_LEVEL_WARNING,
+        mailer_status = blocked,
+        mailer_message = <<"Recipient blocked by Zotonic module (#is_recipient_ok)">>,
+        props = [ {reason, recipient_blocked} ],
         message_nr = Id,
         envelop_to = Recipient,
         envelop_from = <<>>,
@@ -749,7 +753,10 @@ drop_blocked_email(Id, Recipient, Email, Context) ->
         other_id = proplists:get_value(list_id, Email#email.vars),
         message_template = Email#email.html_tpl
     },
-    z_notifier:notify(#zlog{user_id=z_acl:user(Context), props=LogEmail}, Context).
+    z_notifier:notify(#zlog{
+            user_id = z_acl:user(Context),
+            props = LogEmail
+        }, Context).
 
 delete_email(Error, Id, Recipient, Email, Context) ->
     delete_emailq(Id),
@@ -781,52 +788,41 @@ delete_email(Error, Id, Recipient, Email, Context) ->
 
 % Start a worker, prevent too many workers per domain.
 spawn_send_checked(Id, Recipient, Email, RetryCt, Context, State) ->
-    Recipient1 = check_override(Recipient, m_config:get_value(site, email_override, Context), State),
+    Recipient1 = check_override(
+        Recipient,
+        m_config:get_value(site, email_override, Context),
+        m_config:get_value(site, email_override_exceptions, Context),
+        State),
     RecipientEmail = recipient_email_address(Recipient1),
-    case is_recipient_blocked(RecipientEmail, Context) of
-        false ->
-            [_RcptLocalName, RecipientDomain] = binary:split(RecipientEmail, <<"@">>),
-            SmtpOpts = [
-                {no_mx_lookups, State#state.smtp_no_mx_lookups},
-                {hostname, z_convert:to_list(z_email:email_domain(Context))},
-                {timeout, ?SMTP_CONNECT_TIMEOUT}
-            ] ++ case relay_site_options(State, Context) of
-                {true, RelayOpts} -> RelayOpts;
-                false -> [{relay, z_convert:to_list(RecipientDomain)}]
-            end,
+    case is_recipient_ok(RecipientEmail, Context) of
+        true ->
+            SmtpOpts = smtp_options(RecipientEmail, State, Context),
             BccSmtpOpts = case z_utils:is_empty(State#state.smtp_bcc) of
                 true ->
                     [];
                 false ->
                     {_BccName, BccEmail} = z_email:split_name_email(State#state.smtp_bcc),
-                    [_BccLocalName, BccDomain] = binary:split(BccEmail, <<"@">>),
-                    [
-                        {no_mx_lookups, State#state.smtp_no_mx_lookups},
-                        {hostname, z_convert:to_list(z_email:email_domain(Context))},
-                        {timeout, ?SMTP_CONNECT_TIMEOUT}
-                    ] ++ case relay_site_options(State, Context) of
-                        {true, BccRelayOpts} -> BccRelayOpts;
-                        false -> [{relay, z_convert:to_list(BccDomain)}]
-                    end
+                    smtp_options(BccEmail, State, Context)
             end,
             MessageId = message_id(Id, Context),
             VERP = bounce_email(MessageId, Context),
             From = get_email_from(Email#email.from, VERP, State, Context),
-            SenderPid = erlang:spawn_link(
+            ContextCsp = z_context:set_csp_nonce(Context),
+            SenderPid = proc_lib:spawn_link(
                 fun() ->
                     spawned_email_sender(
                             Id, MessageId, Recipient, RecipientEmail, <<"<", VERP/binary, ">">>,
                             From, State#state.smtp_bcc, Email, SmtpOpts, BccSmtpOpts,
-                            RetryCt, Context)
+                            RetryCt, ContextCsp)
                 end),
             {relay, Relay} = proplists:lookup(relay, SmtpOpts),
             State#state{
                     sending=[
                         #email_sender{id=Id, sender_pid=SenderPid, domain=Relay} | State#state.sending
                     ]};
-        true ->
+        false ->
             ?LOG_NOTICE(#{
-                text => <<"[smtp] Dropping email to blocked address">>,
+                text => <<"[smtp] Dropping email to address blocked by Zotonic module (#is_recipient_ok)">>,
                 in => zotonic_core,
                 result => error,
                 reason => blocked,
@@ -836,15 +832,43 @@ spawn_send_checked(Id, Recipient, Email, RetryCt, Context, State) ->
             State
     end.
 
+smtp_options(RecipientEmail, State, Context) ->
+    [_RcptLocalName, RecipientDomain] = binary:split(RecipientEmail, <<"@">>),
+    RelayOptions = case relay_site_options(State, Context) of
+                       {true, RelayOpts} ->
+                           RelayOpts;
+                       false ->
+                           [{relay, z_convert:to_list(RecipientDomain)}]
+                   end,
+
+    Options = [ {no_mx_lookups, State#state.smtp_no_mx_lookups},
+                {hostname, client_smtphost(Context)},
+                {timeout, ?SMTP_CONNECT_TIMEOUT} | RelayOptions ],
+
+    case proplists:is_defined(tls_options, Options) of
+        true ->
+            Options;
+        false ->
+            %% It is needed to have access to the mx-record to do the name
+            %% verification. It looks like this validation can be done inside
+            %% gen_smtp only.
+            [ {tls_options, [ tls_versions(), {verify, verify_none} ]} | Options ]
+    end.
+
+client_smtphost(Context) ->
+    case z_convert:to_binary(m_config:get_value(site, client_smtphost, Context)) of
+        <<>> ->
+            z_email:email_domain(Context);
+        SmtpHost ->
+            SmtpHost
+    end.
+
 %% @doc Fetch the SMTP relay options, if the Zotonic system is configured to use a relay
 %% then that relay is always used. Otherwise the relay configuration of the site is used.
 relay_site_options(#state{ smtp_relay = true } = State, _Context) ->
     Relay = proplists:get_value(relay, State#state.smtp_relay_opts),
     RelayOpts = [
-        {tls_options, [
-            {versions, ['tlsv1.2']}
-            | tls_certificate_check:options(Relay)
-        ]}
+        {tls_options, [ tls_versions() | tls_certificate_check:options(Relay) ]}
         | State#state.smtp_relay_opts
     ],
     {true, RelayOpts};
@@ -891,21 +915,25 @@ relay_site_options(_State, Context) ->
             {true, [
                 {relay, SmtpHost},
                 {port, Port},
-                {tls_options, [
-                    {versions, ['tlsv1.2']}
-                    | tls_certificate_check:options(SmtpHost)
-                ]}
+                {tls_options, [ tls_versions() | tls_certificate_check:options(SmtpHost) ]}
             ] ++ Creds ++ TLS};
         false ->
             false
     end.
 
+tls_versions() ->
+    {versions, ['tlsv1.2', 'tlsv1.3']}.
+
 spawned_email_sender(Id, MessageId, Recipient, RecipientEmail, VERP, From,
                      Bcc, Email, SmtpOpts, BccSmtpOpts, RetryCt, Context) ->
     z_context:logger_md(Context),
-    EncodedMail = encode_email(Id, Email, <<"<", MessageId/binary, ">">>, From, Context),
-    spawned_email_sender_loop(Id, MessageId, Recipient, RecipientEmail, VERP, From,
-                              Bcc, Email, EncodedMail, SmtpOpts, BccSmtpOpts, RetryCt, Context).
+    case encode_email(Id, Email, <<"<", MessageId/binary, ">">>, From, Context) of
+        {ok, EncodedMail} ->
+            spawned_email_sender_loop(Id, MessageId, Recipient, RecipientEmail, VERP, From,
+                                      Bcc, Email, EncodedMail, SmtpOpts, BccSmtpOpts, RetryCt, Context);
+        {error, _Reason} = Error ->
+            Error
+    end.
 
 spawned_email_sender_loop(Id, MessageId, Recipient, RecipientEmail, VERP, From,
                           Bcc, Email, EncodedMail, SmtpOpts, BccSmtpOpts, RetryCt, Context) ->
@@ -924,18 +952,22 @@ spawned_email_sender_loop(Id, MessageId, Recipient, RecipientEmail, VERP, From,
                                  Bcc, Email, SmtpOpts, BccSmtpOpts, RetryCt, Context);
         ok ->
             LogEmail = #log_email{
-                message_nr=Id,
-                envelop_to=RecipientEmail,
-                envelop_from=VERP,
-                to_id=proplists:get_value(recipient_id, Email#email.vars),
-                from_id=z_acl:user(Context),
-                content_id=proplists:get_value(id, Email#email.vars),
-                other_id=proplists:get_value(list_id, Email#email.vars), %% Supposed to contain the mailinglist id
-                message_template=Email#email.html_tpl
+                mailer_status = sending,
+                message_nr = Id,
+                envelop_to = RecipientEmail,
+                envelop_from = VERP,
+                to_id = proplists:get_value(recipient_id, Email#email.vars),
+                from_id = z_acl:user(Context),
+                content_id = proplists:get_value(id, Email#email.vars),
+                other_id = proplists:get_value(list_id, Email#email.vars), %% Supposed to contain the mailinglist id
+                message_template = Email#email.html_tpl
             },
             z_notifier:notify(#zlog{
-                                user_id=LogEmail#log_email.from_id,
-                                props=LogEmail#log_email{severity=?LOG_LEVEL_INFO, mailer_status=sending}
+                                user_id = LogEmail#log_email.from_id,
+                                props = LogEmail#log_email{
+                                            severity = ?LOG_LEVEL_INFO,
+                                            mailer_status = sending
+                                        }
                               }, Context),
 
             %% use the unique id as 'envelope sender' (VERP)
@@ -962,41 +994,41 @@ spawned_email_sender_loop(Id, MessageId, Recipient, RecipientEmail, VERP, From,
                         true ->
                             %% do nothing, it will retry later
                             z_notifier:notify(#email_failed{
-                                    message_nr=Id,
-                                    recipient=Recipient,
-                                    is_final=false,
-                                    reason=retry,
-                                    retry_ct=RetryCt,
-                                    status=Message
+                                    message_nr = Id,
+                                    recipient = Recipient,
+                                    is_final = false,
+                                    reason = retry,
+                                    retry_ct = RetryCt,
+                                    status = Message
                                 }, Context),
                             z_notifier:notify(#zlog{
-                                                user_id=LogEmail#log_email.from_id,
-                                                props=LogEmail#log_email{
-                                                        severity = ?LOG_LEVEL_WARNING,
-                                                        mailer_status = retry,
-                                                        mailer_message = message(Message),
-                                                        mailer_host = Host
-                                                    }
+                                                user_id = LogEmail#log_email.from_id,
+                                                props = LogEmail#log_email{
+                                                            severity = ?LOG_LEVEL_WARNING,
+                                                            mailer_status = retry,
+                                                            mailer_message = message(Message),
+                                                            mailer_host = Host
+                                                        }
                                               }, Context),
                             ok;
                         false ->
                             % permanent failure, something is wrong with the receiving server or the recipient
                             z_notifier:notify(#email_failed{
-                                    message_nr=Id,
-                                    recipient=Recipient,
-                                    is_final=true,
-                                    reason=smtphost,
-                                    retry_ct=RetryCt,
-                                    status=Message
+                                    message_nr = Id,
+                                    recipient = Recipient,
+                                    is_final = true,
+                                    reason = smtphost,
+                                    retry_ct = RetryCt,
+                                    status = Message
                                 }, Context),
                             z_notifier:notify(#zlog{
-                                                user_id=LogEmail#log_email.from_id,
-                                                props=LogEmail#log_email{
-                                                        severity = ?LOG_LEVEL_ERROR,
-                                                        mailer_status = bounce,
-                                                        mailer_message = message(Message),
-                                                        mailer_host = Host
-                                                    }
+                                                user_id = LogEmail#log_email.from_id,
+                                                props = LogEmail#log_email{
+                                                            severity = ?LOG_LEVEL_ERROR,
+                                                            mailer_status = bounce,
+                                                            mailer_message = message(Message),
+                                                            mailer_host = Host
+                                                        }
                                               }, Context),
                             % delete email from the queue and notify the system
                             delete_emailq(Id)
@@ -1011,19 +1043,19 @@ spawned_email_sender_loop(Id, MessageId, Recipient, RecipientEmail, VERP, From,
                     }),
                     % Returned when the options are not ok
                     z_notifier:notify(#email_failed{
-                            message_nr=Id,
-                            recipient=Recipient,
-                            is_final=true,
-                            reason=error,
-                            retry_ct=RetryCt
+                            message_nr = Id,
+                            recipient = Recipient,
+                            is_final = true,
+                            reason = error,
+                            retry_ct = RetryCt
                         }, Context),
                     z_notifier:notify(#zlog{
-                                        user_id=LogEmail#log_email.from_id,
-                                        props=LogEmail#log_email{
-                                                severity = ?LOG_LEVEL_ERROR,
-                                                mailer_status = error,
-                                                props = [{reason, z_convert:to_binary(Reason)}]
-                                            }
+                                        user_id = LogEmail#log_email.from_id,
+                                        props = LogEmail#log_email{
+                                                    severity = ?LOG_LEVEL_ERROR,
+                                                    mailer_status = error,
+                                                    props = [{reason, z_convert:to_binary(Reason)}]
+                                                }
                                       }, Context),
                     %% delete email from the queue and notify the system
                     delete_emailq(Id);
@@ -1037,17 +1069,17 @@ spawned_email_sender_loop(Id, MessageId, Recipient, RecipientEmail, VERP, From,
                         message => Receipt1
                     }),
                     z_notifier:notify(#email_sent{
-                            message_nr=Id,
-                            recipient=Recipient,
-                            is_final=false
+                            message_nr = Id,
+                            recipient = Recipient,
+                            is_final = false
                         }, Context),
                     z_notifier:notify(#zlog{
-                                        user_id=LogEmail#log_email.from_id,
-                                        props=LogEmail#log_email{
-                                                severity = ?LOG_LEVEL_INFO,
-                                                mailer_status = sent,
-                                                mailer_message = Receipt1
-                                            }
+                                        user_id = LogEmail#log_email.from_id,
+                                        props = LogEmail#log_email{
+                                                    severity = ?LOG_LEVEL_INFO,
+                                                    mailer_status = sent,
+                                                    mailer_message = Receipt1
+                                                }
                                       }, Context),
                     %% email accepted by relay
                     mark_sent(Id),
@@ -1116,7 +1148,7 @@ send_blocking_smtp(MsgId, VERP, RecipientEmail, EncodedMail, SmtpOpts, Context) 
         {error, Failure, {_FailureType, _Host, {error, Reason}}}
             when IsFallbackPlainText,
                  (Failure =:= send orelse Failure =:= retries_exceeded),
-                 (Reason =:= closed orelse Reason =:= timeout) ->
+                 (Reason =:= closed orelse Reason =:= timeout orelse Reason =:= einval) ->
             send_blocking_no_tls(VERP, RecipientEmail, EncodedMail, SmtpOpts, Context);
         {error, _Failure, {_FailureType, _Host, <<"554 TLS handshake failure", _/binary>>}}
             when IsFallbackPlainText ->
@@ -1198,7 +1230,7 @@ is_retry_possible(_Reason, __FailureType, _Message) ->
     true.
 
 encode_email(_Id, #email{raw=Raw}, _MessageId, _From, _Context) when is_list(Raw); is_binary(Raw) ->
-    z_convert:to_binary(Raw);
+    {ok, z_convert:to_binary(Raw)};
 encode_email(Id, #email{body=undefined} = Email, MessageId, From, Context) ->
     %% Optionally render the text and html body
     Vars = [{email_to, Email#email.to}, {email_from, From} | Email#email.vars],
@@ -1224,7 +1256,21 @@ encode_email(Id, #email{body=undefined} = Email, MessageId, From, Context) ->
                {<<"Message-Id">>, MessageId}
                 | Email#email.headers ],
     Headers2 = add_reply_to(Id, Email, add_cc(Email, Headers), Context),
-    build_and_encode_mail(Headers2, Text, Html, Email#email.attachments, Context);
+    try
+        Encoded = build_and_encode_mail(Headers2, Text, Html, Email#email.attachments, Context),
+        {ok, Encoded}
+    catch
+        E:R:S ->
+            ?LOG_ERROR(#{
+                in => zotonic_core,
+                text => <<"Error encoding email">>,
+                result => E,
+                reason => R,
+                stack => S,
+                headers => Headers2
+            }),
+            {error, R}
+    end;
 encode_email(Id, #email{body=Body} = Email, MessageId, From, Context) when is_tuple(Body) ->
     Headers = [{<<"From">>, From},
                {<<"To">>, ensure_brackets(Email#email.to)},
@@ -1235,14 +1281,42 @@ encode_email(Id, #email{body=Body} = Email, MessageId, From, Context) when is_tu
     MailHeaders = [
         {z_convert:to_binary(H), z_convert:to_binary(V)} || {H,V} <- (Headers2 ++ BodyHeaders)
     ],
-    mimemail:encode({BodyType, BodySubtype, MailHeaders, BodyParams, BodyParts}, opt_dkim(Context));
+    try
+        Encoded = mimemail:encode({BodyType, BodySubtype, MailHeaders, BodyParams, BodyParts}, opt_dkim(Context)),
+        {ok, Encoded}
+    catch
+        E:R:S ->
+            ?LOG_ERROR(#{
+                in => zotonic_core,
+                text => <<"Error encoding email">>,
+                result => E,
+                reason => R,
+                stack => S,
+                headers => MailHeaders
+            }),
+            {error, R}
+    end;
 encode_email(Id, #email{body=Body} = Email, MessageId, From, Context) when is_list(Body); is_binary(Body) ->
     Headers = [{<<"From">>, From},
                {<<"To">>, ensure_brackets(Email#email.to)},
                {<<"Message-Id">>, MessageId}
                 | Email#email.headers ],
     Headers2 = add_reply_to(Id, Email, add_cc(Email, Headers), Context),
-    iolist_to_binary([ encode_headers(Headers2), "\r\n\r\n", Body ]).
+    try
+        Encoded = iolist_to_binary([ encode_headers(Headers2), "\r\n\r\n", Body ]),
+        {ok, Encoded}
+    catch
+        E:R:S ->
+            ?LOG_ERROR(#{
+                in => zotonic_core,
+                text => <<"Error encoding email">>,
+                result => E,
+                reason => R,
+                stack => S,
+                headers => Headers2
+            }),
+            {error, R}
+    end.
 
 ensure_brackets(Email) when is_binary(Email) ->
     case binary:match(Email, <<"<">>) of
@@ -1416,9 +1490,10 @@ expand_cr(<<C, R/binary>>, Acc) -> expand_cr(R, <<Acc/binary, C>>).
 
 
 
-check_override(EmailAddr, _SiteOverride, _State) when EmailAddr =:= undefined; EmailAddr =:= []; EmailAddr =:= <<>> ->
-    undefined;
-check_override(EmailAddr, SiteOverride, #state{override=ZotonicOverride}) ->
+check_override(undefined, _SiteOverride, _Exceptions, _State) -> undefined;
+check_override("", _SiteOverride, _Exceptions, _State) -> undefined;
+check_override(<<>>, _SiteOverride, _Exceptions, _State) -> undefined;
+check_override(EmailAddr, SiteOverride, Exceptions, #state{ override = ZotonicOverride }) ->
     UseOverride = case z_utils:is_empty(ZotonicOverride) of
         true -> SiteOverride;
         false -> ZotonicOverride
@@ -1427,11 +1502,36 @@ check_override(EmailAddr, SiteOverride, #state{override=ZotonicOverride}) ->
         true ->
             EmailAddr;
         false ->
-            z_email:combine_name_email(
-                iolist_to_binary([EmailAddr, " (override)"]),
-                UseOverride)
+            case is_override_exception(EmailAddr, Exceptions) of
+                true ->
+                    EmailAddr;
+                false ->
+                    z_email:combine_name_email(
+                        iolist_to_binary([EmailAddr, " (override)"]),
+                        UseOverride)
+            end
     end.
 
+is_override_exception(_Email, undefined) -> false;
+is_override_exception(_Email, <<>>) -> false;
+is_override_exception(_Email, "") -> false;
+is_override_exception(Email, OverrideExceptions) ->
+    Es = split_override_exceptions(z_string:to_lower(OverrideExceptions)),
+    Email1 = z_string:to_lower(
+        unicode:characters_to_binary(
+            re:replace(Email, <<"\\+.*@">>, <<"@">>), utf8)),
+    lists:any(fun(E) -> is_match_exception(Email1, E) end, Es).
+
+is_match_exception(Email, <<"@", Domain/binary>>) ->
+    case binary:split(Email, <<"@">>) of
+        [ _, Domain ] -> true;
+        _ -> false
+    end;
+is_match_exception(Email, Exception) ->
+    Email =:= Exception.
+
+split_override_exceptions(S) ->
+    binary:split(S, [ <<" ">>, <<"\t">>, <<"\n">>, <<";">>, <<",">> ], [ global, trim_all ]).
 
 optional_render(undefined, undefined, _Vars, _Context) ->
     [];

@@ -28,13 +28,14 @@
 ]).
 
 % -type termvalue() :: #{
-%         <<"term">> => binary(),
-%         <<"value">> => term()
+%         <<"term">> := binary(),
+%         <<"value">> => term(),
+%         <<"operator">> => binary()
 %     }.
 %
 % -type termoperator() :: #{
 %         <<"operator">> => binary(),
-%         <<"terms">> => list( queryterm() )
+%         <<"terms">> := list( queryterm() )
 %     }.
 %
 % -type queryterm() :: termvalue() | termoperator().
@@ -119,9 +120,11 @@ split_arg(B) ->
     Query :: map().
 from_list(Args0) when is_list(Args0) ->
     Args = maybe_map_keys(Args0),
+    Args1 = z_utils:prop_delete(<<"pagelen">>,
+                                z_utils:prop_delete(<<"page">>, Args)),
     TermArgs = lists:filter(
             fun({K, _V}) -> not z_context:is_zotonic_arg(K) end,
-            Args),
+            Args1),
     TermArgs1 = lists:filter(
             fun
                 ({_, <<>>}) -> false;
@@ -241,7 +244,14 @@ maybe_rename_arg({K, V}) when is_binary(K) ->
     [ K1 | _ ] = binary:split(K, <<"~">>),
     case is_filter_arg(K1) of
         true ->
-            K2 = binary:replace(K1, <<".">>, <<":">>, [ global ]),
+            Parts = binary:split(K1, <<".">>, [ global ]),
+            K2 = case lists:last(Parts) of
+                Special when Special =:= <<"value">>; Special =:= <<"operator">> ->
+                    K3 = lists:reverse(tl(lists:reverse(Parts))),
+                    iolist_to_binary([ lists:join($:, K3), $., Special]);
+                _ ->
+                    iolist_to_binary(lists:join($:, Parts))
+            end,
             {K2, V};
         false ->
             {K1, V}

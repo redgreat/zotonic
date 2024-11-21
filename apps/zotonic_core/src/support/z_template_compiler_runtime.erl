@@ -345,6 +345,7 @@ find_value(Key, #search_result{} = S, _TplVars, _Context) ->
         pages -> S#search_result.pages;
         next -> S#search_result.next;
         prev -> S#search_result.prev;
+        facets -> S#search_result.facets;
         <<"search">> -> {S#search_result.search_name, S#search_result.search_args};
         <<"search_name">> -> S#search_result.search_name;
         <<"search_args">> -> S#search_result.search_args;
@@ -357,6 +358,7 @@ find_value(Key, #search_result{} = S, _TplVars, _Context) ->
         <<"pages">> -> S#search_result.pages;
         <<"next">> -> S#search_result.next;
         <<"prev">> -> S#search_result.prev;
+        <<"facets">> -> S#search_result.facets;
         Nth when is_integer(Nth) ->
             nth(Nth, S#search_result.result);
         Nth when is_binary(Nth) ->
@@ -647,7 +649,24 @@ to_render_result(undefined, _TplVars, _Context) ->
 to_render_result({{Y,M,D},{H,I,S}} = Date, TplVars, Context)
     when is_integer(Y), is_integer(M), is_integer(D),
          is_integer(H), is_integer(I), is_integer(S) ->
-    z_datetime:format(Date, "Y-m-d H:i:s", set_context_vars(TplVars, Context));
+    try
+        if
+            M =:= 0 -> <<>>;
+            D =:= 0 -> <<>>;
+            true -> z_datetime:format(Date, "Y-m-d H:i:s", set_context_vars(TplVars, Context))
+        end
+    catch
+        _:Error:Stack ->
+            ?LOG_WARNING(#{
+                in => zotonic_core,
+                text => <<"Error formatting datetime tuple">>,
+                result => error,
+                reason => Error,
+                stack => Stack,
+                datetime => Date
+            }),
+            <<>>
+    end;
 to_render_result(#search_result{result=Result}, _TplVars, _Context) ->
     io_lib:format("~p", [Result]);
 to_render_result(#rsc_list{list=L}, _TplVars, _Context) ->

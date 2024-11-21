@@ -19,6 +19,9 @@
 // Period between checking with the server if the authentication is still valid.
 var AUTH_CHECK_PERIOD = 30;
 
+// Maximum period between checks (in seconds).
+var AUTH_CHECK_PERIOD_MAX = 900;
+
 // TODO:
 // - recheck auth after ws connect and no recent auth check (or failed check)
 //   this could be due to browser wakeup or server down time.
@@ -81,19 +84,9 @@ model.present = function(data) {
                 // This because on initial load the SameSite=Strict session
                 // cookie is not passed to the page controller.
                 model.state_change('auth_unknown');
-
-                self.call("model/sessionStorage/get/auth-user-id")
-                    .then((msg) => {
-                        model.auth.user_id = msg.payload;
-                    });
             }
         } else {
             model.state_change('auth_unknown');
-
-            self.call("model/sessionStorage/get/auth-user-id")
-                .then((msg) => {
-                    model.auth.user_id = msg.payload;
-                });
         }
 
         // Handle auth changes forced by changes of the session storage
@@ -280,13 +273,13 @@ model.present = function(data) {
 
             model.next_check = AUTH_CHECK_PERIOD;
             if (data.auth_response.expires) {
-                let timeout = data.auth_response.expires;
+                let timeout = Math.min(data.auth_response.expires, AUTH_CHECK_PERIOD_MAX);
 
                 if (timeout < model.next_check) {
                     timeout = Math.max(0, timeout - 1);
                 } else {
                     // Check the status somewhere in the last quarter of the
-                    // expirarion period. Use random to prevent multiple tabs
+                    // expiration period. Use random to prevent multiple tabs
                     // checking at the same time.
                     let t = Math.floor(Math.random() * Math.floor(timeout/4));
                     timeout = Math.max(1, timeout - t - 4);

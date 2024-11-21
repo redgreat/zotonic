@@ -561,13 +561,13 @@ is_block_tag(_Other)       -> false.
 
 type_underscore(List) ->
     case type_underscore1(trim_right(List)) of
-        hr    -> {hr, List};
-        maybe -> {type_underscore2(List), List}
+        hr      -> {hr, List};
+        'maybe' -> {type_underscore2(List), List}
     end.
 
 type_underscore1([])                          -> hr;
 type_underscore1([{{md, underscore}, _} | T]) -> type_underscore1(T);
-type_underscore1(_List)                       -> maybe.
+type_underscore1(_List)                       -> 'maybe'.
 
 type_underscore2(List) ->
     case trim_right(List) of % be permissive of trailing spaces
@@ -580,19 +580,19 @@ type_underscore2(List) ->
 type_star(List) ->
     Trim = trim_right(List),
     case type_star1(Trim) of % be permssive of trailing spaces
-        hr    -> {hr, trim_right(Trim)};
-        maybe -> Type = type_star2(List),
-                 % if it is a normal line we prepend it with a special
-                 % non-space filling white space character
-                 case Type of
-                     normal -> {normal, [{{ws, none}, none} | List]};
-                     _      -> {Type, List}
-                 end
+        hr      ->  {hr, trim_right(Trim)};
+        'maybe' ->  Type = type_star2(List),
+                    % if it is a normal line we prepend it with a special
+                    % non-space filling white space character
+                    case Type of
+                        normal -> {normal, [{{ws, none}, none} | List]};
+                        _      -> {Type, List}
+                    end
     end.
 
 type_star1([])                    -> hr;
 type_star1([{{md, star}, _} | T]) -> type_star1(T);
-type_star1(_List)                 -> maybe.
+type_star1(_List)                 -> 'maybe'.
 
 type_star2(List) ->
     case trim_right(List) of
@@ -984,11 +984,10 @@ get_url1([$> | T], Acc)      -> URL = lists:flatten(lists:reverse(Acc)),
 get_url1([H | T], Acc)       -> get_url1(T, [H | Acc]).
 
 get_email_addie(String) ->
-    Snip_regex = ">",
-    case re:run(String, Snip_regex, [ unicode ]) of
-        nomatch                -> not_email;
-        {match, [{N, _} | _T]} ->
-            {Possible, [$> | T]} = lists:split(N, String),
+    case lists:splitwith(fun(C) -> C =/= $> end, String) of
+        {_, []} ->
+            not_email;
+        {Possible, [$> | T]} ->
             EMail_regex = "[a-z0-9!#$%&'*+/=?^_`{|}~-]+"
                 ++ "(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*"
                 ++ "@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+"
@@ -1047,7 +1046,8 @@ m_str1([{{inline, open}, O} | T], R, A) ->
             m_str1(Rest, R, [Tag, O | A])
     end;
 m_str1([{email, Addie} | T], R, A) ->
-    m_str1(T, R, [{tags, "\" />"}, Addie, {tags, "<a href=\"mailto:"}| A]);
+    m_str1(T, R, [ {tags, "</a>"}, Addie, {tags, "\">"}, Addie,
+                   {tags, "<a href=\"mailto:"} | A]);
 m_str1([{url, Url} | T], R, A) ->
     m_str1(T, R, [ {tags, "</a>"}, Url, {tags, "\">"}, Url,
                    {tags, "<a href=\""} | A]);

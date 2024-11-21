@@ -36,11 +36,13 @@
 
 %% @doc Change the 2FA setting for the user group
 event(#postback{ message={auth2fa_ug, Args} }, Context) ->
-    case z_acl:is_allowed(use, mod_admin_config, Context) of
+    {id, Id} = proplists:lookup(id, Args),
+    case z_acl:is_allowed(use, mod_admin_config, Context)
+        andalso z_acl:rsc_editable(Id, Context)
+    of
         true ->
-            {id, Id} = proplists:lookup(id, Args),
-            TV = z_convert:to_binary( z_context:get_q(triggervalue, Context) ),
-            {ok, _} = m_rsc:update(Id, [ {acl_2fa, TV} ], Context),
+            TV = z_convert:to_binary( z_context:get_q(<<"triggervalue">>, Context) ),
+            {ok, _} = m_rsc:update(Id, #{ <<"acl_2fa">> => TV }, Context),
             z_render:growl(?__("Changed the 2FA setting.", Context), Context);
         false ->
             z_render:growl(?__("Sorry, you are not allowed to change the 2FA settings.", Context), Context)
@@ -165,7 +167,7 @@ observe_admin_menu(#admin_menu{}, Acc, Context) ->
      | Acc ].
 
 %% @doc Check the 2FA code, called after password check passed.
-observe_auth_postcheck(#auth_postcheck{ id = UserId, query_args = QueryArgs }, Context) ->
+observe_auth_postcheck(#auth_postcheck{ service = Service, id = UserId, query_args = QueryArgs }, Context) ->
     case m_auth2fa:is_totp_enabled(UserId, Context) of
         true ->
             case z_string:trim( z_convert:to_binary( maps:get(<<"passcode">>, QueryArgs, <<>>) ) ) of
@@ -177,11 +179,11 @@ observe_auth_postcheck(#auth_postcheck{ id = UserId, query_args = QueryArgs }, C
                         false -> {error, passcode}
                     end
             end;
-        false ->
+        false when Service =:= username_pw ->
             % Could also have a POST of the new passcode secret to be set.
             % In that case the passcode can be set for the user and 'undefined'
             % returned
-            case z_convert:to_integer(m_config:get_value(mod_auth2fa, mode, Context)) of
+            case mode(UserId, Context) of
                 3 ->
                     case maps:get(<<"code-new">>, QueryArgs, undefined) of
                         CodeNew when is_binary(CodeNew), CodeNew =/= <<>> ->
@@ -200,5 +202,13 @@ observe_auth_postcheck(#auth_postcheck{ id = UserId, query_args = QueryArgs }, C
                     end;
                 _ ->
                     undefined
-            end
+            end;
+        false ->
+            undefined
+    end.
+
+mode(UserId, Context) ->
+    case z_convert:to_integer(m_config:get_value(mod_auth2fa, mode, Context)) of
+        3 -> 3;
+        _ -> m_auth2fa:user_mode(z_acl:logon(UserId, Context))
     end.

@@ -80,9 +80,7 @@ event(#postback{ message = {template_xref_check, Args} }, Context) ->
     {element_id, EltId} = proplists:lookup(element_id, Args),
     case z_acl:is_allowed(use, mod_development, Context) of
         true ->
-            sidejob_supervisor:spawn(
-                    zotonic_sidejobs,
-                    {?MODULE, task_xref_check, [ EltId, Context ]}),
+            z_sidejob:start(?MODULE, task_xref_check, [ EltId ], Context),
             z_render:wire({mask, [
                     {target, EltId},
                     {message, ?__("Checking all templates...", Context)}
@@ -97,9 +95,7 @@ event(#postback{ message = {template_graph, Args} }, Context) ->
     {element_id, EltId} = proplists:lookup(element_id, Args),
     case z_acl:is_allowed(use, mod_development, Context) of
         true ->
-            sidejob_supervisor:spawn(
-                    zotonic_sidejobs,
-                    {?MODULE, task_graph, [ EltId, Context ]}),
+            z_sidejob:start(?MODULE, task_graph, [ EltId ], Context),
             z_render:wire({mask, [
                     {target, EltId},
                     {message, ?__("Checking all templates...", Context)}
@@ -159,7 +155,26 @@ event(#postback{ message = {template_trace_fetch, Args} }, Context) ->
                 EltId,
                 ?__("No permission to use mod_development.", Context),
                 Context)
+    end;
+event(#postback{ message = log_client_enable }, Context) ->
+    IsEnabled = z_convert:to_bool(z_context:get_q(<<"is_enabled">>, Context)),
+    Result = if
+        IsEnabled ->
+            mod_logging:log_client_start(Context);
+        not IsEnabled ->
+            mod_logging:log_client_stop(Context)
+    end,
+    case Result of
+        ok when IsEnabled ->
+            z_render:growl(?__("Started logging to the console of your browser tab.", Context), Context);
+        ok when not IsEnabled ->
+            z_render:growl(?__("Stopped logging to the console of all browser tabs.", Context), Context);
+        {error, eacces} ->
+            z_render:growl(?__("No permission to access the console logs.", Context), Context);
+        {error, _} ->
+            z_render:growl(?__("Error changing the console logs.", Context), Context)
     end.
+
 
 task_xref_check(EltId, Context) ->
     {ok, XRef} = z_development_template_xref:check(Context),

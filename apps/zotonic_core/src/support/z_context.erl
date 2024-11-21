@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2023  Marc Worrell
+%% @copyright 2009-2024  Marc Worrell
 %% @doc Request context for Zotonic request evaluation.
 %% @end
 
-%% Copyright 2009-2023 Marc Worrell
+%% Copyright 2009-2024 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -118,6 +118,7 @@
     set_tz/2,
 
     set_csp_nonce/1,
+    set_csp_nonce/2,
     csp_nonce/1,
 
     set_resp_header/3,
@@ -1226,15 +1227,29 @@ set_csp_nonce(Context) ->
             Context
     end.
 
+%% @doc Set the Content-Security-Policy nonce for the request.
+-spec set_csp_nonce( Nonce, Context ) -> Context1 when
+    Nonce :: binary(),
+    Context :: z:context(),
+    Context1 :: z:context().
+set_csp_nonce(Nonce, Context) ->
+    set(csp_nonce, Nonce, Context).
+
 %% @doc Return the Content-Security-Policy nonce for the request.
 -spec csp_nonce( z:context() ) -> binary().
 csp_nonce(Context) ->
     case get(csp_nonce, Context) of
         undefined ->
-            ?LOG_WARNING(#{
-                text => <<"csp_nonce requested but not set">>,
-                in => zotonic_core
-            }),
+            try
+                throw(x)
+            catch
+                _:_:S ->
+                    ?LOG_WARNING(#{
+                        text => <<"csp_nonce requested but not set">>,
+                        in => zotonic_core,
+                        stack => S
+                    })
+            end,
             <<>>;
         Nonce when is_binary(Nonce) ->
             Nonce
@@ -1346,14 +1361,28 @@ set_nocache_headers(Context = #context{cowreq=Req}) when is_map(Req) ->
 -spec set_security_headers( z:context() ) -> z:context().
 set_security_headers(Context) ->
     Default = [
-        % {<<"content-security-policy">>, <<"script-src 'self' 'nonce-'">>}
+        {<<"content-security-policy">>, <<
+            "default-src 'self'; "
+            "script-src 'self' 'nonce-' https:; "
+            "style-src 'self' https: 'unsafe-inline'; " % Unsafe-inline is needed for OpenLayers
+            % "style-src 'self' 'nonce-' https:; "
+            % "style-src-attr 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "media-src 'self' data: https: mediastream:; "
+            "font-src 'self' https:; "
+            "frame-src 'self' https:; "
+            "object-src 'none'; "
+            "form-action 'self'; "
+            "worker-src 'self' blob:; "
+            "connect-src 'self' https:"
+         >>},
         {<<"x-content-type-options">>, <<"nosniff">>},
         {<<"x-permitted-cross-domain-policies">>, <<"none">>},
         {<<"referrer-policy">>, <<"origin-when-cross-origin">>}
     ],
     Default1 = case z_context:get(allow_frame, Context, false) of
         true -> Default;
-        false -> [ {<<"x-frame-options">>, <<"sameorigin">>} | Default ]
+        false -> [ {<<"x-frame-options">>, <<"SAMEORIGIN">>} | Default ]
     end,
     HSTSHeaders = case hsts_header(Context) of
         {_,_} = H -> [ H | Default1 ];
@@ -1371,7 +1400,8 @@ set_security_headers(Context) ->
             CSPHdr1 = binary:replace(
                         CSPHdr,
                         <<"'nonce-'">>,
-                        <<"'nonce-", Nonce/binary, $'>>),
+                        <<"'nonce-", Nonce/binary, $'>>,
+                        [ global ]),
             [
                 {<<"content-security-policy">>, CSPHdr1}
                 | proplists:delete(<<"content-security-policy">>, SecurityHeaders)

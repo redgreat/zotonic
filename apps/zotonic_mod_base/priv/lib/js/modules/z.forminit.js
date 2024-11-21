@@ -91,7 +91,7 @@ $.widget("ui.forminit",
 
             if (typeof args[name] === 'object' && args[name].length > 0) {
                 if (control.nodeName === "INPUT") {
-                    switch (controls[i].type) {
+                    switch (control.type) {
                         case 'file':
                         case 'submit':
                         case 'reset':
@@ -103,6 +103,12 @@ $.widget("ui.forminit",
                                 control.checked = true;
                             } else {
                                 control.checked = false;
+                            }
+                            break;
+                        case "hidden":
+                            const new_value = args[name].shift() ?? "";
+                            if (new_value != "") {
+                                control.value = new_value;
                             }
                             break;
                         default:
@@ -141,6 +147,8 @@ $.widget("ui.forminit",
                         case 'radio':
                         case 'checkbox':
                             control.checked = false;
+                            break;
+                        case "hidden":
                             break;
                         default:
                             control.value = "";

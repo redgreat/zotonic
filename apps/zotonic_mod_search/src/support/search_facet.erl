@@ -73,7 +73,7 @@
     search_query_facets/3,
     search_query_subfacets/3,
 
-    qterm/3,
+    qterm/4,
 
     pivot_rsc/2,
     pivot_all/1,
@@ -216,12 +216,78 @@ search_query_facets(Result, #search_sql{ search_sql_terms = Terms }, Context) ->
     FinalSQL = iolist_to_binary(SQL3),
     {ok, Facets} = z_db:qmap(FinalSQL, Args2, Context),
     Fs = group_facets(Defs, Facets, Context),
+    Fs1 = ensure_facet_qterms(Result#search_result.search_args, Fs, Context),
     Result#search_result{
-        facets = Fs
+        facets = Fs1
     }.
 
 is_facet_term(#search_sql_term{ label = {facet, _} }) -> true;
 is_facet_term(#search_sql_term{}) -> false.
+
+%% @doc Check the found facets, ensure that on facet filtering query terms
+%% are present in the returned facet values. This ensures that select boxes
+%% with filter terms can still be populated with the selected facet filter.
+ensure_facet_qterms(#{ <<"q">> := Args }, Fs, Context) ->
+    FacetTerms = lists:flatten(find_facet_qterms(Args)),
+    lists:foldl(
+        fun({Facet, Value}, Acc) ->
+            ensure_facet_value(Facet, Value, Acc, Context)
+        end,
+        Fs,
+        FacetTerms);
+ensure_facet_qterms(_SearchArgs, Fs, _Context) ->
+    Fs.
+
+ensure_facet_value(Facet, Value, Fs, Context) ->
+    case maps:get(Facet, Fs, undefined) of
+        #{
+            <<"counts">> := Counts,
+            <<"facet_type">> := Type,
+            <<"type">> := <<"count">>
+        } = F ->
+            TypeAtom = binary_to_existing_atom(Type),
+            Value1 = convert_single_type(TypeAtom, Value, Context),
+            case is_facet_value_present(Value1, Counts) of
+                true ->
+                    Fs;
+                false ->
+                    Counts1 = Counts ++ [
+                        #{
+                            <<"count">> => 0,
+                            <<"facet">> => Facet,
+                            <<"value">> => Value1,
+                            <<"label">> => label(Facet, Value, Context)
+                        }
+                    ],
+                    Fs#{
+                        Facet => F#{ <<"counts">> => Counts1 }
+                    }
+            end;
+        _ ->
+            Fs
+    end.
+
+is_facet_value_present(Value, Counts) ->
+    lists:any(fun(#{ <<"value">> := V }) -> V == Value end, Counts).
+
+find_facet_qterms(Args) when is_list(Args) ->
+    lists:filtermap(fun find_facet_qterm/1, Args);
+find_facet_qterms(_) ->
+    [].
+
+find_facet_qterm(#{ <<"term">> := <<"facet:", Facet/binary>>, <<"value">> := V } = T) ->
+    Op = maps:get(<<"operator">>, T, <<"=">>),
+    {Op1, V1} = search_query:extract_value_op(V, Op),
+    case Op1 of
+        <<"=">> -> {true, {Facet, V1}};
+        <<"<>">> -> {true, {Facet, V1}};
+        _ -> false
+    end;
+find_facet_qterm(#{ <<"operator">> := _, <<"terms">> := NestedTerms }) ->
+    {true, find_facet_qterms(NestedTerms)};
+find_facet_qterm(_) ->
+    false.
+
 
 %% @doc Add facets to the result set using the query. The facets are calculated
 %% using the result ids. Facets can be used for a "drill down".
@@ -452,16 +518,17 @@ facet_union(#facet_def{ name = Name }) ->
 
 %% @doc Add an extra search argument to the given query. Called by the query
 %% builder in search_query.erl
--spec qterm(Field, Value, Context) -> {ok, Term} | {error, term()}
+-spec qterm(Field, Op, Value, Context) -> {ok, Term} | {error, term()}
     when Field :: binary(),
+         Op :: binary() | undefined,
          Value :: term(),
          Term :: #search_sql_term{},
          Context :: z:context().
-qterm(_Field, [], _Context) ->
+qterm(_Field, _Op, [], _Context) ->
     {ok, []};
-qterm(Field, [Value], Context) ->
-    qterm(Field, Value, Context);
-qterm(Field, Vs, Context) when is_list(Vs) ->
+qterm(Field, Op, [Value], Context) ->
+    qterm(Field, Op, Value, Context);
+qterm(Field, Op, Vs, Context) when is_list(Vs) ->
     % 'OR' query for all values
     Q = #search_sql_term{
         label = {facet, Field},
@@ -471,7 +538,7 @@ qterm(Field, Vs, Context) when is_list(Vs) ->
     },
     Q2 = lists:foldl(
         fun(V, QAcc) ->
-            case qterm_1(Field, V, QAcc, Context) of
+            case qterm_1(Field, Op, V, QAcc, Context) of
                 {ok, QAcc1} ->
                     QAcc1;
                 {error, _} ->
@@ -488,13 +555,13 @@ qterm(Field, Vs, Context) when is_list(Vs) ->
         ]
     },
     {ok, Q3};
-qterm(Field, Value, Context) ->
+qterm(Field, Op, Value, Context) ->
     Q = #search_sql_term{
         join_inner = #{
             <<"facet">> => {<<"search_facet">>, <<"facet.id = rsc.id">>}
         }
     },
-    case qterm_1(Field, Value, Q, Context) of
+    case qterm_1(Field, Op, Value, Q, Context) of
         {ok, #search_sql_term{ where = Where} = Q2} when is_list(Where), length(Where) > 1 ->
             Q3 = Q2#search_sql_term{
                 where = [
@@ -510,13 +577,13 @@ qterm(Field, Value, Context) ->
             Error
     end.
 
-qterm_1(Field, Value, Query, Context) ->
+qterm_1(Field, OpTerm, Value, Query, Context) ->
     case facet_def(Field, Context) of
         {ok, Def} ->
-            {Op, Value1} = extract_op(Value),
+            {Op, Value1} = search_query:extract_value_op(Value, OpTerm),
             Value2 = convert_type(Def#facet_def.type, Value1, Context),
             Final = case Def#facet_def.type of
-                fulltext when Op =:= "=" ->
+                fulltext when Op =:= <<"=">> ->
                     NormV = z_string:normalize(Value2),
                     Words = words(NormV),
                     lists:foldl(
@@ -532,7 +599,7 @@ qterm_1(Field, Value, Query, Context) ->
                         end,
                         Query,
                         Words);
-                fts when Op =:= "=" ->
+                fts when Op =:= <<"=">> ->
                     NormV = z_string:normalize(Value2),
                     TsQuery = mod_search:to_tsquery(NormV, Context),
                     {ArgN, Query2} = add_term_arg(TsQuery, Query),
@@ -554,9 +621,7 @@ qterm_1(Field, Value, Query, Context) ->
                     };
                 _ ->
                     {ArgN, Query2} = add_term_arg(Value2, Query),
-                    W = [
-                        <<"facet.f_">>, Field, Op, ArgN
-                    ],
+                    W = search_query:term_op_expr([<<"facet.f_">>, Field], Op, ArgN, text),
                     Query2#search_sql_term{
                         label = {facet, Field},
                         where = Query2#search_sql_term.where ++ [ W ]
@@ -579,23 +644,6 @@ add_term_arg(ArgValue, #search_sql_term{ args = Args } = Q) ->
     Arg = [$$] ++ integer_to_list(length(Args) + 1),
     {list_to_atom(Arg), Q#search_sql_term{args = Args ++ [ ArgValue ]}}.
 
-extract_op(<<"!=", V/binary>>) ->
-    {"<>", V};
-extract_op(<<"<>", V/binary>>) ->
-    {"<>", V};
-extract_op(<<"<=", V/binary>>) ->
-    {"<=", V};
-extract_op(<<">=", V/binary>>) ->
-    {">=", V};
-extract_op(<<"=", V/binary>>) ->
-    {"=", V};
-extract_op(<<">", V/binary>>) ->
-    {">", V};
-extract_op(<<"<", V/binary>>) ->
-    {"<", V};
-extract_op(V) ->
-    {"=", V}.
-
 
 % %% Append an argument to a #search_sql
 % add_arg(ArgValue, Search) ->
@@ -609,17 +657,22 @@ extract_op(V) ->
 pivot_all(Context) ->
     ?LOG_INFO(#{
         in => zotonic_mod_search,
-        text => <<"Faceted search: repivoting facet for all resources">>
+        text => <<"Faceted search: repivoting facet for all resources - queued">>
     }),
-    {ok, _} = z_pivot_rsc:insert_task_after(1, ?MODULE, pivot_batch, facet_pivot_batch, [0], Context),
+    MaxId = z_db:q1("select max(id) from rsc", Context),
+    {ok, _} = z_pivot_rsc:insert_task_after(0, ?MODULE, pivot_batch, facet_pivot_batch, [MaxId+1], Context),
     ok.
 
-%% @doc Batch for running the facet table updates. This updates the table with 1000 resources
+%% @doc Batch for running the facet table updates. This updates the table with 5000 resources
 %% at a time.
-pivot_batch(FromId, Context0) ->
+pivot_batch(ToId, Context0) ->
     Context = z_acl:sudo(Context0),
-    case z_db:q("select id from rsc where id > $1 order by id limit 5000", [FromId], Context) of
+    case z_db:q("select id from rsc where id < $1 order by id desc limit 5000", [ToId], Context) of
         [] ->
+            ?LOG_INFO(#{
+                in => zotonic_mod_search,
+                text => <<"Faceted search: repivoting facet for all resources - ready">>
+            }),
             done;
         Rs ->
             lists:foreach(
@@ -627,8 +680,8 @@ pivot_batch(FromId, Context0) ->
                     pivot_rsc(Id, Context)
                 end,
                 Rs),
-            {Max} = lists:last(Rs),
-            {delay, 1, [Max]}
+            {Min} = lists:last(Rs),
+            {delay, 0, [Min]}
     end.
 
 %% @doc Pivot a resource, fill the facet table.
@@ -768,18 +821,48 @@ convert_type_1(text, V, _Context) ->
 %% table and request a pivot of all resources to fill the table.
 -spec ensure_table(z:context()) -> ok | {error, term()}.
 ensure_table(Context) ->
-    case is_table_ok(Context) of
-        true ->
-            ok;
-        false ->
-            case recreate_table(Context) of
-                ok ->
-                    pivot_all(Context),
+    case modules_not_running(Context) of
+        [] ->
+            case is_table_ok(Context) of
+                true ->
                     ok;
-                {error, _} = Error ->
-                    Error
-            end
+                false ->
+                    case recreate_table(Context) of
+                        ok ->
+                            pivot_all(Context),
+                            ok;
+                        {error, _} = Error ->
+                            Error
+                    end
+            end;
+        NotRunning ->
+            ?LOG_INFO(#{
+                in => zotonic_mod_search,
+                text => <<"Delaying search facet check because not all modules are running.">>,
+                result => warning,
+                reason => not_running,
+                modules => NotRunning
+            })
     end.
+
+%% @doc Check if there are module not running. A not-running module might have a facet definition
+%% we need for building the facet table.
+-spec modules_not_running(z:context()) -> [ atom() ].
+modules_not_running(Context) ->
+    Status = z_module_manager:get_modules_status(Context),
+    NotRunning = [ M || {M, S} <- Status, S =/= running ],
+    if
+        NotRunning =:= [] ->
+            case proplists:get_value(z_context:site(Context), Status) of
+                running ->
+                    [];
+                _ ->
+                    [ z_context:site(Context) ]
+            end;
+        true ->
+            NotRunning
+    end.
+
 
 %% @doc Check if the current table is compatible with the facets in pivot.tpl
 -spec is_table_ok(z:context()) -> boolean().
@@ -811,6 +894,32 @@ is_type([ _ | Cols ], Name, Type, IsArray) ->
     is_type(Cols, Name, Type, IsArray).
 
 
+%% @doc Return a label values to a specific facet
+label(FacetField, Value, Context) when is_binary(FacetField) ->
+    case facet_def(FacetField, Context) of
+        {ok, FacetDef} ->
+            case has_label_block(FacetDef, Context) of
+            {true, LabelBlock} ->
+                case render_block(LabelBlock, {cat, <<"pivot/facet.tpl">>}, #{ <<"id">> => Value }, Context) of
+                    <<>> ->
+                        escape(Value);
+                    T ->
+                        escape_check(T)
+                end;
+            false ->
+                case FacetDef#facet_def.type of
+                    id ->
+                        id_label(Value, Context);
+                    ids ->
+                        id_label(Value, Context);
+                    _ ->
+                        escape(Value)
+                end
+            end;
+        {error, _} ->
+            escape(Value)
+    end.
+
 %% @doc Add label values to the fetched facets for faceted search
 labels(_, [], _Context) ->
     [];
@@ -834,41 +943,57 @@ value_via_block(LabelBlock, Vs, Context) ->
     lists:map(
         fun
             (#{ <<"value">> := V, <<"facet_id">> := 0 } = F) ->
-                F#{ <<"label">> => V };
+                F#{ <<"label">> => escape(V) };
             (#{ <<"value">> := V, <<"facet_id">> := Id } = F) ->
                 % NOTA BENE:
                 % The found id might not be visible.
                 case render_block(LabelBlock, {cat, <<"pivot/facet.tpl">>}, #{ <<"id">> => Id }, Context) of
                     <<>> ->
-                        F#{ <<"label">> => V };
+                        F#{ <<"label">> => escape(V) };
                     T ->
-                        F#{ <<"label">> => T }
+                        F#{ <<"label">> => escape_check(T) }
                 end
         end,
         Vs).
 
+escape(V) when is_binary(V) ->
+    z_html:escape(V);
+escape(V) ->
+    V.
+
+escape_check(V) when is_binary(V) ->
+    z_html:escape_check(V).
+
 ids_as_labels(Vs, Context) ->
     lists:map(
         fun(#{ <<"value">> := Id } = F) ->
-            T = case m_rsc:is_a(Id, person, Context) of
+            F#{ <<"label">> => id_label(Id, Context) }
+        end,
+        Vs).
+
+id_label(Id, Context) ->
+    case m_rsc:rid(Id, Context) of
+        undefined ->
+            escape(z_convert:to_binary(Id));
+        RscId ->
+            T = case m_rsc:is_a(RscId, person, Context) of
                 true ->
                     {Name, _} = z_template:render_to_iolist("_name.tpl", #{ <<"id">> => Id }, Context),
                     iolist_to_binary(Name);
                 false ->
-                    m_rsc:p(Id, <<"title">>, Context)
+                    m_rsc:p(RscId, <<"title">>, Context)
             end,
             T1 = case z_utils:is_empty(T) of
-                true -> m_rsc:p(Id, <<"short_title">>, Context);
+                true -> m_rsc:p(RscId, <<"short_title">>, Context);
                 false -> T
             end,
-            F#{ <<"label">> => z_trans:lookup_fallback(T1, Context) }
-        end,
-        Vs).
+            z_convert:to_binary(z_trans:lookup_fallback(T1, Context))
+    end.
 
 values_as_labels(Vs) ->
     lists:map(
         fun(#{ <<"value">> := V } = F) ->
-            F#{ <<"label">> => V }
+            F#{ <<"label">> => escape(V) }
         end,
         Vs).
 

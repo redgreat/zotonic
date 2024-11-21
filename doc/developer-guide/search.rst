@@ -103,13 +103,17 @@ database table, and the second column name to be the filter value::
 If the filter is a three-column list, the second column is the
 operator. This must be an atom (surround it in backquotes!) and must
 be one of the following: ``eq``, ``ne``, ``gt``, ``gte``, ``lt``,
-``lte``; or one of ``=``, ``<>``, ``>``, ``>=``, ``<``, ``<=``::
+``lte``; or one of ``=``, ``<>``, ``>``, ``>=``, ``<``, ``<=``, ``~``::
 
     filter=['facet.numeric_value', `>`, 10]
 
 It is possible to define an OR query for multiple terms::
 
     filter=[ ['facet.numeric_value', `>`, 10], ['facet.numeric_value', `<=`, 0] ]
+
+All postal codes starting with ``10``::
+
+    filter=[ ['pivot.postcode', `~`, "10" ] ]
 
 hassubject
 ^^^^^^^^^^
@@ -218,6 +222,22 @@ objects ids will be returned first::
     match_objects=1234
 
 An ``id_exlude=...`` is automatically added for the resource in the argument.
+
+Optionally accepts a ``predicate`` option to only match using the object-ids
+that are connected to the id using the given predicate or predicates.
+
+Example::
+
+    %{
+       term: "match_objects",
+       value: id,
+       predicate: [ "subject", "author" ]
+    }
+
+This returns a list of resource ids that have similar objects as the authors and
+subjects of the resource ``id``. The objects can be connected to the resulting
+ids using any predicate.
+
 
 match_object_ids
 ^^^^^^^^^^^^^^^^

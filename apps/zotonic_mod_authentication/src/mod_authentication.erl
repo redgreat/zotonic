@@ -38,7 +38,8 @@
     observe_admin_menu/3,
     observe_auth_validated/2,
     observe_auth_client_logon_user/2,
-    observe_auth_client_switch_user/2
+    observe_auth_client_switch_user/2,
+    observe_tick_1h/2
 ]).
 
 -include_lib("zotonic_core/include/zotonic.hrl").
@@ -77,6 +78,25 @@ event(#submit{ message={signup_confirm, Props} }, Context) ->
             z_render:wire({show, [{target, "signup_error"}]}, Context);
         {ok, Context1} ->
             z_render:wire({script, [{script, "window.close()"}]}, Context1)
+    end;
+event(#postback{message={close_all_sessions, _Args}}, Context) ->
+    case z_acl:user(Context) of
+        undefined ->
+            Context;
+        UserId ->
+            % Logoff and remove cookies
+            % Force all user-agents connected via MQTT to logoff
+            Context1 = z_auth:logoff(Context),
+            Context2 = z_authentication_tokens:reset_cookies(Context1),
+            % Change secrets - invalidates all existing sessions and autologon cookies.
+            z_authentication_tokens:regenerate_user_secret(UserId, Context2),
+            z_authentication_tokens:regenerate_user_autologon_secret(UserId, Context2),
+            % Force a reload of the page (the user will have to log in again)
+            z_mqtt:publish(
+                [ <<"~user">>, <<"session">>, <<"logoff">> ],
+                #{},
+                Context),
+            z_render:wire({reload, []}, Context2)
     end.
 
 %% @doc Check for authentication cookies in the request.
@@ -278,10 +298,17 @@ maybe_add_identity_logon(Auth, Context) ->
                     {ok, UserId};
                 {[UserId], _} when not Auth#auth_validated.is_signup_confirmed ->
                     % Local user with matching verified email identity.
-                    case z_notifier:first(#auth_postcheck{ id = UserId, query_args = #{} }, Context) of
+                    case z_notifier:first(#auth_postcheck{
+                            service = Auth#auth_validated.service,
+                            id = UserId,
+                            query_args = #{}
+                        }, Context) of
                         {error, need_passcode} ->
                             % Local 2FA enabled - let the user enter their code
                             {error, {need_passcode, UserId}};
+                        {error, set_passcode} ->
+                            % Local 2FA enabled - the user needs to set their passcode
+                            {error, {set_passcode, UserId}};
                         undefined ->
                             % As both SSO and local email addresses are confirmed AND there
                             % is no local 2FA enabled, add SSO identities and allow direct logon.
@@ -486,3 +513,6 @@ insert_identity(UserId, Auth, Context) ->
 
 auth_identity(#auth_validated{service=Service, service_uid=Uid}, Context) ->
     m_identity:lookup_by_type_and_key(Service, Uid, Context).
+
+observe_tick_1h(tick_1h, Context) ->
+    m_identity:cleanup_logon_history(Context).

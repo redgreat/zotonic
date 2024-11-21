@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<html lang="{{ z_language }}" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 {% block email %}
 <head>
     {% comment %} Email template from https://tedgoas.github.io/Cerberus/ {% endcomment %}
@@ -27,7 +27,7 @@
     <![endif]-->
 
     <!-- CSS Reset : BEGIN -->
-    <style>
+    <style type="text/css" nonce="{{ m.req.csp_nonce }}">
 
         /* What it does: Tells the email client that only light styles are provided but the client can transform them to dark. A duplicate of meta color-scheme meta tag above. */
         :root {
@@ -144,7 +144,7 @@
     <!-- CSS Reset : END -->
 
     <!-- Progressive Enhancements : BEGIN -->
-    <style>
+    <style type="text/css" nonce="{{ m.req.csp_nonce }}">
 
         /* What it does: Hover styles for buttons */
         .button-td,

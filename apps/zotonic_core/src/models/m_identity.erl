@@ -38,6 +38,8 @@
     set_expired/3,
     set_identity_expired/3,
     set_visited/2,
+    logon_history/2,
+    cleanup_logon_history/1,
     ensure_username_pw/2,
     ensure_username_pw/3,
     check_username_pw/3,
@@ -108,12 +110,17 @@
 -export_type([
     type/0,
     key/0,
-    password/0
+    password/0,
+    identity/0,
+    hash/0,
+    bcrypt_hash/0,
+    sha1_salted_hash/0
     ]).
 
 -include_lib("zotonic.hrl").
 
 -define(IDN_CACHE_TIME, 3600*12).
+-define(IDN_LOG_TTL, 3600*24*30).
 
 %% Default duration and random variance interval for password checks.
 %% This prevents a timing difference between checks for existing and
@@ -170,6 +177,11 @@ m_get([ Id, <<"user_info">> | Rest ], _Msg, Context) ->
             {ok, {Info, Rest}};
         false ->
             {error, eacces}
+    end;
+m_get([ Id, <<"logon_history">> | Rest ], _Msg, Context) ->
+    case logon_history(Id, Context) of
+        {error, Error} -> {error, Error};
+        {ok, LogonHistory} -> {ok, {LogonHistory, Rest}}
     end;
 m_get([ Id, <<"all_types">> | Rest ], _Msg, Context) ->
     Idns = case z_acl:rsc_editable(Id, Context) of
@@ -249,11 +261,16 @@ m_get(_Vs, _Msg, _Context) ->
 filter_idn(undefined) ->
     undefined;
 filter_idn(Idn) ->
+    Type = proplists:get_value(type, Idn),
+    Key = case binary:match(Type, <<"_secret">>) of
+        nomatch -> proplists:get_value(key, Idn);
+        _ -> undefined
+    end,
     [
         {id, proplists:get_value(id, Idn)},
         {rsc_id, proplists:get_value(rsc_id, Idn)},
-        {type, proplists:get_value(type, Idn)},
-        {key, proplists:get_value(key, Idn)},
+        {type, Type},
+        {key, Key},
         {is_verified, proplists:get_value(is_verified, Idn)},
         {is_unique, proplists:get_value(is_unique, Idn)},
         {modified, proplists:get_value(modified, Idn)},
@@ -407,14 +424,7 @@ delete_username(RscId, Context) when is_integer(RscId) ->
                 [RscId],
                 Context
             ),
-            flush(RscId, Context),
-            z_mqtt:publish(
-                [ <<"model">>, <<"identity">>, <<"event">>, RscId, <<"username_pw">> ],
-                #{
-                    id => RscId,
-                    type => <<"username_pw">>
-                },
-                z_acl:sudo(Context)),
+            notify(RscId, delete, <<"username_pw">>, undefined, undefined, Context),
             ok;
         false ->
             {error, eacces}
@@ -554,7 +564,7 @@ set_username(?ACL_ADMIN_USER_ID, _Username, Context) ->
 set_username(Id, Username, Context) when is_integer(Id) ->
     case is_allowed_set_username(Id, Context) of
         true ->
-            Username1 = z_string:to_lower( z_convert:to_binary(Username) ),
+            Username1 = normalize_key(username_pw, Username),
             case is_reserved_name(Username1) of
                 true ->
                     {error, eexist};
@@ -588,20 +598,12 @@ set_username(Id, Username, Context) when is_integer(Id) ->
                     end,
                     case z_db:transaction(F, Context) of
                         ok ->
-                            flush(Id, Context),
                             z:info(
                                 "Change of username for user ~p (~s)",
                                 [ Id, Username1 ],
                                 [ {module, ?MODULE} ],
                                 Context),
-                            z_mqtt:publish(
-                                [ <<"model">>, <<"identity">>, <<"event">>, Id, <<"username_pw">> ],
-                                #{
-                                    id => Id,
-                                    type => <<"username_pw">>
-                                },
-                                z_acl:sudo(Context)),
-                            z_depcache:flush(Id, Context),
+                            notify(Id, update, <<"username_pw">>, Username1, true, Context),
                             ok;
                         {rollback, {error, _} = Error, _Trace} ->
                             Error;
@@ -640,7 +642,7 @@ set_username_pw(?ACL_ADMIN_USER_ID, _, _, Context) ->
 set_username_pw(Id, Username, Password, Context)  when is_integer(Id) ->
     case is_allowed_set_username(Id, Context) of
         true ->
-            Username1 = z_string:trim(z_string:to_lower(Username)),
+            Username1 = normalize_key(username_pw, Username),
             IsForceDifferent = z_convert:to_bool( m_config:get_value(site, password_force_different, Context) ),
             set_username_pw_1(IsForceDifferent, m_rsc:rid(Id, Context), Username1, Password, Context);
         false ->
@@ -666,29 +668,24 @@ set_username_pw_2(Id, Username, Password, Context) when is_integer(Id) ->
     Hash = hash(Password),
     case z_db:transaction(fun(Ctx) -> set_username_pw_trans(Id, Username, Hash, Ctx) end, Context) of
         {ok, S} ->
-            case S of
+            Action = case S of
                 new ->
                     z:info(
                         "New username/password for user ~p (~s)",
                         [ Id, Username ],
                         [ {module, ?MODULE} ],
-                        Context);
+                        Context),
+                    insert;
                 exists ->
                     z:info(
                         "Change of username/password for user ~p (~s)",
                         [ Id, Username ],
                         [ {module, ?MODULE} ],
-                        Context)
+                        Context),
+                    update
             end,
             reset_auth_tokens(Id, Context),
-            flush(Id, Context),
-            z_mqtt:publish(
-                [ <<"model">>, <<"identity">>, <<"event">>, Id, <<"username_pw">> ],
-                #{
-                    id => Id,
-                    type => <<"username_pw">>
-                },
-                z_acl:sudo(Context)),
+            notify(Id, Action, <<"username_pw">>, Username, true, Context),
             ok;
         {rollback, {{error, Reason} = Error, Trace}} ->
             ?LOG_ERROR(#{
@@ -760,12 +757,35 @@ set_username_pw_trans(Id, Username, Hash, Context) ->
     end.
 
 %% @doc Flush the cached identity values fo the given resource (aka user) id.
--spec flush(Id, Context) -> ok when
-    Id :: m_rsc:resource_id(),
+-spec flush(RscId, Context) -> ok when
+    RscId :: m_rsc:resource_id(),
     Context :: z:context().
-flush(Id, Context) ->
-    z_depcache:flush(Id, Context),
-    z_depcache:flush({idn, Id}, Context).
+flush(RscId, Context) ->
+    z_depcache:flush(RscId, Context),
+    z_depcache:flush({idn, RscId}, Context).
+
+
+%% @doc Notify identity changes.
+notify(RscId, Action, Type, Key, IsVerified, Context) ->
+    flush(RscId, Context),
+    Type1 = z_convert:to_binary(Type),
+    z_mqtt:publish(
+        [ <<"model">>, <<"identity">>, <<"event">>, RscId, Type1 ],
+        #{
+            id => RscId,
+            type => Type
+        },
+        z_acl:sudo(Context)),
+    z_notifier:notify(
+        #identity_update_done{
+            action = Action,
+            rsc_id = RscId,
+            type = Type1,
+            key = Key,
+            is_verified = IsVerified
+        },
+        Context).
+
 
 %% @doc Ensure that the user has an associated username and password
 -spec ensure_username_pw(UserId, Context) -> ok | {error, term()} when
@@ -855,14 +875,7 @@ reset_password(UserId, Context)  when is_integer(UserId) ->
                     {error, nouser};
                 1 ->
                     reset_auth_tokens(UserId, Context),
-                    flush(UserId, Context),
-                    z_mqtt:publish(
-                        [ <<"model">>, <<"identity">>, <<"event">>, UserId, <<"username_pw">> ],
-                        #{
-                            id => UserId,
-                            type => <<"username_pw">>
-                        },
-                        z_acl:sudo(Context)),
+                    notify(UserId, update, <<"username_pw">>, undefined, true, Context),
                     ?LOG_INFO(#{
                         in => zotonic_core,
                         text => <<"Password reset of user">>,
@@ -994,7 +1007,7 @@ wait_message(Ref) ->
 check_username_pw_do(Username, Password, QueryArgs, Context) when is_list(QueryArgs) ->
     check_username_pw_do(Username, Password, maps:from_list(QueryArgs), Context);
 check_username_pw_do(Username, Password, QueryArgs, Context) when is_map(QueryArgs) ->
-    NormalizedUsername = z_convert:to_binary( z_string:trim( z_string:to_lower(Username) ) ),
+    NormalizedUsername = normalize_key(username_pw, Username),
     case z_notifier:first(#auth_precheck{ username =  NormalizedUsername }, Context) of
         Ok when Ok =:= ok; Ok =:= undefined ->
             case post_check( check_username_pw_1(NormalizedUsername, Password, Context), QueryArgs, Context ) of
@@ -1054,11 +1067,6 @@ check_username_pw_1(<<"admin">>, Password, Context) ->
             % Only allow default password from allowed ip addresses
             case is_peer_allowed(Context) of
                 true ->
-                    z_db:q("
-                        update identity
-                        set visited = now()
-                        where id = 1", Context),
-                    flush(?ACL_ADMIN_USER_ID, Context),
                     {ok, 1};
                 false ->
                     ?LOG_ERROR(#{
@@ -1074,20 +1082,14 @@ check_username_pw_1(<<"admin">>, Password, Context) ->
         AdminPassword ->
             case is_equal(Password1, AdminPassword) of
                 true ->
-                    z_db:q("
-                        update identity
-                        set visited = now()
-                        where id = 1", Context),
-                    flush(?ACL_ADMIN_USER_ID, Context),
                     {ok, 1};
                 false ->
                     {error, password}
             end
     end;
 check_username_pw_1(Username, Password, Context) ->
-    Username1 = z_convert:to_binary( z_string:trim(z_string:to_lower(Username)) ),
     Password1 = z_convert:to_binary( Password ),
-    case z_notifier:first( #auth_validate{ username = Username1, password = Password1 }, Context) of
+    case z_notifier:first( #auth_validate{ username = Username, password = Password1 }, Context) of
         {ok, _} = OK ->
             OK;
         {error, _} = Error ->
@@ -1098,13 +1100,13 @@ check_username_pw_1(Username, Password, Context) ->
                 from identity
                 where type = 'username_pw'
                   and key = $1",
-                [Username1],
+                [Username],
                 Context),
             case Row of
                 undefined ->
                     % If the Username looks like an e-mail address, try by Email & Password
-                    case z_email_utils:is_email(Username1) of
-                        true -> check_email_pw(Username1, Password, Context);
+                    case z_email_utils:is_email(Username) of
+                        true -> check_email_pw(Username, Password, Context);
                         false -> {error, nouser}
                     end;
                 {1, _Hash, _IsExpired} ->
@@ -1408,6 +1410,7 @@ insert_1(Rsc, Type, Key, Props, Context) ->
     RscId = m_rsc:rid(Rsc, Context),
     TypeB = z_convert:to_binary(Type),
     KeyB = z_convert:to_binary(Key),
+    IsVerified = z_convert:to_bool(proplists:get_value(is_verified, Props)),
     case z_db:q1("select id
                   from identity
                   where rsc_id = $1
@@ -1424,14 +1427,7 @@ insert_1(Rsc, Type, Key, Props, Context) ->
                 | Props
             ],
             Result = z_db:insert(identity, Props1, Context),
-            flush(RscId, Context),
-            z_mqtt:publish(
-                [ <<"model">>, <<"identity">>, <<"event">>, RscId, TypeB ],
-                #{
-                    id => RscId,
-                    type => TypeB
-                },
-                z_acl:sudo(Context)),
+            notify(RscId, insert, TypeB, KeyB, IsVerified, Context),
             Result;
         IdnId ->
             Props1 = case proplists:get_value(is_verified, Props, false) of
@@ -1448,14 +1444,7 @@ insert_1(Rsc, Type, Key, Props, Context) ->
                     ]
             end,
             _ = z_db:update(identity, IdnId, Props1, Context),
-            flush(RscId, Context),
-            z_mqtt:publish(
-                [ <<"model">>, <<"identity">>, <<"event">>, RscId, TypeB ],
-                #{
-                    id => RscId,
-                    type => TypeB
-                },
-                z_acl:sudo(Context)),
+            notify(RscId, update, TypeB, KeyB, IsVerified, Context),
             {ok, IdnId}
     end.
 
@@ -1469,8 +1458,8 @@ is_valid_key(Type, _Key, _Context) when is_atom(Type); is_binary(Type) -> true.
 
 -spec normalize_key(type(), key() | undefined) -> key() | undefined.
 normalize_key(_Type, undefined) -> undefined;
-normalize_key(username_pw, Key) -> z_convert:to_binary(z_string:trim(z_string:to_lower(Key)));
-normalize_key(email, Key) -> z_convert:to_binary(z_string:trim(z_string:to_lower(Key)));
+normalize_key(username_pw, Key) -> z_string:trim(z_string:to_lower(unicode:characters_to_binary(Key)));
+normalize_key(email, Key) -> z_string:trim(z_string:to_lower(unicode:characters_to_binary(Key)));
 normalize_key("username_pw", Key) -> normalize_key(username_pw, Key);
 normalize_key("email", Key) -> normalize_key(email, Key);
 normalize_key(<<"username_pw">>, Key) -> normalize_key(username_pw, Key);
@@ -1486,26 +1475,70 @@ insert_unique(RscId, Type, Key, Props, Context) ->
 
 
 %% @doc Set the visited timestamp for the given user.
-%% @todo Make this a log - so that we can see the last visits and check if this
-%% is from a new browser/ip address.
 -spec set_visited(m_rsc:resource_id(), z:context()) -> ok | {error, enoent}.
-set_visited(undefined, _Context) ->
-    ok;
+set_visited(undefined, _Context) -> ok;
 set_visited(UserId, Context) when is_integer(UserId) ->
-    case z_db:q(
-        "update identity
-         set visited = now()
-         where rsc_id = $1
-           and type = 'username_pw'",
-        [m_rsc:rid(UserId, Context)],
-        Context)
-    of
-        0 ->
-            {error, enoent};
-        N when N >= 1 ->
-            flush(UserId, Context),
-            ok
+    z_db:transaction(fun(Ctx) -> set_visited_trans(UserId, Ctx) end, Context);
+set_visited(User, Context) ->
+    set_visited(m_rsc:rid(User, Context), Context).
+
+% Part of 'set_visited' to execute in one DB transaction
+set_visited_trans(UserId, Context) when is_integer(UserId) ->
+    case z_db:q1("select id from identity where rsc_id = $1 and type = 'username_pw'", [UserId], Context) of
+        undefined -> {error, enoent};
+        EntryId ->
+            UserAgent = z_string:truncatechars(m_req:get(user_agent, Context), 240),
+            IpAddress = case inet:ntoa(m_req:get(peer_ip, Context)) of
+                {error, einval} -> undefined;
+                IpAddressString -> z_convert:to_binary(IpAddressString)
+            end,
+            % Note: it may seem unnecessary to set both the 'visited' field of
+            % the 'identity' table as well as adding a row to 'identity_log',
+            % but the latter is periodically pruned and we still want to be able
+            % to tell when was the last login of a user (if any).
+            1 = z_db:q("update identity set visited = now() where id = $1", [EntryId], Context),
+            1 = z_db:q(
+                "insert into identity_log (identity_id, rsc_id, user_agent, ip_address)
+                 values ($1,$2,$3, $4)",
+                [EntryId, UserId, UserAgent, IpAddress],
+                Context
+            ),
+            flush(UserId, Context)
     end.
+
+-spec logon_history(m_rsc:resource_id(), z:context()) ->
+        {ok, list({UserAgent, IpAddress, Created})} | {error, eacces} when
+    UserAgent :: binary(),
+    IpAddress :: binary(),
+    Created :: calendar:datetime().
+logon_history(undefined, _Context) -> [];
+logon_history(UserId, Context) when is_integer(UserId) ->
+    case UserId =:= z_acl:user(Context) orelse z_acl:is_admin(Context) of
+        true ->
+            Res = z_db:q(
+                "SELECT user_agent, ip_address, created
+                FROM identity_log
+                WHERE rsc_id = $1
+                ORDER BY created DESC",
+                [UserId],
+                Context
+            ),
+            {ok, Res};
+        false ->
+            {error, eacces}
+    end;
+logon_history(User, Context) ->
+    logon_history(m_rsc:rid(User, Context), Context).
+
+% Remove all logons from the 'identity_log' table older than 'IDN_LOG_TTL' seconds.
+cleanup_logon_history(Context) ->
+    z_db:q(
+        "DELETE FROM identity_log WHERE created < (now() - INTERVAL '" ++
+        z_convert:to_list(?IDN_LOG_TTL) ++
+        " second')",
+        Context
+    ).
+
 
 %% @doc Set the verified flag on a record by identity id.
 -spec set_verified(IdnId, Context) -> ok | {error, notfound} when
@@ -1524,14 +1557,7 @@ set_verified(IdnId, Context) ->
                     Context)
             of
                 1 ->
-                    flush(RscId, Context),
-                    z_mqtt:publish(
-                        [ <<"model">>, <<"identity">>, <<"event">>, RscId, z_convert:to_binary(Type) ],
-                        #{
-                            id => RscId,
-                            type => Type
-                        },
-                        z_acl:sudo(Context)),
+                    notify(RscId, verify, Type, undefined, true, Context),
                     ok;
                 0 ->
                     {error, notfound}
@@ -1549,16 +1575,13 @@ set_verified(RscId, Type, Key, Context)
          Type =/= undefined,
          Key =/= undefined, Key =/= <<>>, Key =/= "" ->
     KeyNorm = normalize_key(Type, Key),
-    Result = z_db:transaction(fun(Ctx) -> set_verified_trans(RscId, Type, KeyNorm, Ctx) end, Context),
-    flush(RscId, Context),
-    z_mqtt:publish(
-        [ <<"model">>, <<"identity">>, <<"event">>, RscId, z_convert:to_binary(Type) ],
-        #{
-            id => RscId,
-            type => Type
-        },
-        z_acl:sudo(Context)),
-    Result;
+    Action = z_db:transaction(fun(Ctx) -> set_verified_trans(RscId, Type, KeyNorm, Ctx) end, Context),
+    notify(RscId, Action, Type, Key, true, Context),
+    case Action of
+        insert -> ok;
+        update -> ok;
+        Error -> Error
+    end;
 set_verified(_RscId, _Type, _Key, _Context) ->
     {error, badarg}.
 
@@ -1578,9 +1601,9 @@ set_verified_trans(RscId, Type, Key, Context) ->
                         values ($1,$2,$3,true)",
                        [RscId, Type, Key],
                        Context),
-            ok;
+            insert;
         N when N > 0 ->
-            ok
+            update
     end.
 
 %% @doc Check if there is a verified identity for the user, beyond the username_pw
@@ -1674,14 +1697,7 @@ delete(IdnId, Context) ->
                 true ->
                     case z_db:delete(identity, IdnId, Context) of
                         {ok, 1} ->
-                            z_depcache:flush({idn, RscId}, Context),
-                            z_mqtt:publish(
-                                [ <<"model">>, <<"identity">>, <<"event">>, RscId, z_convert:to_binary(Type) ],
-                                #{
-                                    id => RscId,
-                                    type => Type
-                                },
-                                z_acl:sudo(Context)),
+                            notify(RscId, delete, Type, Key, undefined, Context),
                             maybe_reset_email_property(RscId, Type, Key, Context),
                             {ok, 1};
                         {ok, 0} ->
@@ -1784,14 +1800,7 @@ delete_by_type(Rsc, Type, Context) ->
     case z_db:q("delete from identity where rsc_id = $1 and type = $2", [RscId, Type], Context) of
         0 -> ok;
         _N ->
-            z_depcache:flush({idn, RscId}, Context),
-            z_mqtt:publish(
-                [ <<"model">>, <<"identity">>, <<"event">>, RscId, z_convert:to_binary(Type) ],
-                #{
-                    id => RscId,
-                    type => Type
-                },
-                z_acl:sudo(Context)),
+            notify(RscId, delete, Type, undefined, undefined, Context),
             ok
     end.
 
@@ -1803,14 +1812,7 @@ delete_by_type_and_key(Rsc, Type, Key, Context) ->
     of
         0 -> ok;
         _N ->
-            z_depcache:flush({idn, RscId}, Context),
-            z_mqtt:publish(
-                [ <<"model">>, <<"identity">>, <<"event">>, RscId, z_convert:to_binary(Type) ],
-                #{
-                    id => RscId,
-                    type => Type
-                },
-                z_acl:sudo(Context)),
+            notify(RscId, delete, Type, Key, undefined, Context),
             ok
     end.
 
@@ -1822,20 +1824,13 @@ delete_by_type_and_keyprefix(Rsc, Type, Key, Context) ->
     of
         0 -> ok;
         _N ->
-            z_depcache:flush({idn, RscId}, Context),
-            z_mqtt:publish(
-                [ <<"model">>, <<"identity">>, <<"event">>, RscId, z_convert:to_binary(Type) ],
-                #{
-                    id => RscId,
-                    type => Type
-                },
-                z_acl:sudo(Context)),
+            notify(RscId, delete, Type, Key, undefined, Context),
             ok
     end.
 
 -spec lookup_by_username(key(), z:context()) -> identity() | undefined.
 lookup_by_username(Key, Context) ->
-    lookup_by_type_and_key(username_pw, z_string:to_lower(Key), Context).
+    lookup_by_type_and_key(username_pw, Key, Context).
 
 -spec lookup_by_type_and_key(type(), key(), z:context()) -> identity() | undefined.
 lookup_by_type_and_key(Type, Key, Context) ->
@@ -1854,10 +1849,10 @@ lookup_users_by_type_and_key(Type, Key, Context) ->
         "select usr.*
          from identity tp, identity usr
          where tp.rsc_id = usr.rsc_id
-           and usr.type in ('username_pw', 'openid')
+           and usr.type = any($3)
            and tp.type = $1
            and tp.key = $2",
-        [Type, Key1],
+        [Type, Key1, user_types(Context)],
         Context).
 
 -spec lookup_users_by_verified_type_and_key(type(), key(), z:context()) -> list( identity() ).
@@ -1867,11 +1862,11 @@ lookup_users_by_verified_type_and_key(Type, Key, Context) ->
         "select usr.*
          from identity tp, identity usr
          where tp.rsc_id = usr.rsc_id
-           and usr.type in ('username_pw', 'openid')
+           and usr.type = any($3)
            and tp.type = $1
            and tp.key = $2
-           and tp.is_verified",
-        [Type, Key1],
+           and tp.is_verified = true",
+        [Type, Key1, user_types(Context)],
         Context).
 
 -spec lookup_by_verify_key(key(), z:context()) -> identity() | undefined.
@@ -1924,7 +1919,8 @@ check_hash(RscId, Username, Password, Hash, Context) ->
 is_reserved_name(List) when is_list(List) ->
     is_reserved_name(z_convert:to_binary(List));
 is_reserved_name(Name) when is_binary(Name) ->
-    is_reserved_name_1(z_string:trim(z_string:to_lower(Name))).
+    Name1 = normalize_key(username_pw, Name),
+    is_reserved_name_1(Name1).
 
 is_reserved_name_1(<<>>) -> true;
 is_reserved_name_1(<<"admin">>) -> true;

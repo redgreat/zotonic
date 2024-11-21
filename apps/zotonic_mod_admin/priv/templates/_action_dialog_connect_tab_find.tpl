@@ -9,7 +9,7 @@
                    autofocus
                    class="form-control do_listfilter do_autofocus"
                    placeholder="{_ Type to filter the list below. _}"
-                   data-listfilter="method: 'words', list: '#find-connect-objects .checkbox'"
+                   data-listfilter='{ "method": "words", "list": "#find-connect-objects .checkbox" }'
             >
         </form>
 
@@ -78,6 +78,7 @@
     		<input type="hidden" name="subject_id" value="{{ subject_id }}" />
             <input type="hidden" name="object_id" value="{{ object_id }}" />
     		<input type="hidden" name="predicate" value="{{ predicate|default:'' }}" />
+            <input type="hidden" name="intent" value="{{ intent|escape }}" />
 
             <div class="col-md-6">
     		    <input name="find_text" type="text" value="{{ text|default:'' }}" placeholder="{_ Type text to search _}" class="do_autofocus form-control" />
@@ -165,7 +166,7 @@
     	</form>
 
     	<div id="dialog-connect-found" class="do_feedback"
-    		data-feedback="trigger: 'dialog-connect-find', delegate: 'mod_admin'">
+    		data-feedback='{ "trigger": "dialog-connect-find", "delegate": "mod_admin" }'>
     	</div>
 
         <div class="modal-footer">

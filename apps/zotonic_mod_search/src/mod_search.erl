@@ -146,19 +146,10 @@ observe_filewatcher(#filewatcher{}, _Context) ->
     ok.
 
 
-%% @doc Check the search facet table when all modules are running and the indexer reindexed
+%% @doc Check the search facet table if all modules are running and the indexer reindexed
 %% the templates.
 observe_module_reindexed(module_reindexed, Context) ->
-    z_context:logger_md(Context),
-    Status = z_module_manager:get_modules_status(Context),
-    NotRunning = [ M || {M, S} <- Status, S =/= running ],
-    case NotRunning of
-        [] ->
-            ?LOG_DEBUG("Checking search facet table."),
-            search_facet:ensure_table(Context);
-        _ ->
-            ?LOG_INFO("Delaying search facet check because not all modules are running.")
-    end.
+    search_facet:ensure_table(Context).
 
 
 %% @doc Check the query watches for a match with the updated resource.
@@ -386,39 +377,59 @@ search(<<"match_objects">>, Args, _OffsetLimit, Context) ->
     ObjectIds = qarg(<<"ids">>, Args, undefined),
     Id = qarg(<<"id">>, Args, undefined),
     Cat = qarg(<<"cat">>, Args, undefined),
-    Terms = if
+    Terms = [
+        if
             is_list(ObjectIds) ->
-                [
-                    #{
-                        <<"term">> => <<"match_object_ids">>,
-                        <<"value">> => ObjectIds
-                    }
-                ];
-            true ->
-                []
-        end ++ [
-        #{
-            <<"term">> => <<"cat">>,
-            <<"value">> => Cat
-        },
-        #{
-            <<"term">> => <<"id_exclude">>,
-            <<"value">> => Exclude
-        },
-        #{
-            <<"term">> => <<"match_objects">>,
-            <<"value">> => Id
-        },
-        #{
-            <<"term">> => <<"content_group">>,
-            <<"value">> => CG
-        },
+                #{
+                    <<"term">> => <<"match_object_ids">>,
+                    <<"value">> => ObjectIds
+                };
+            true -> []
+        end,
+        if
+            Cat =/= undefined ->
+                #{
+                    <<"term">> => <<"cat">>,
+                    <<"value">> => Cat
+                };
+            true -> []
+        end,
+        if
+            Exclude =/= undefined ->
+                #{
+                    <<"term">> => <<"id_exclude">>,
+                    <<"value">> => Exclude
+                };
+            true -> []
+        end,
+        if
+            Id =/= undefined ->
+                 #{
+                    <<"term">> => <<"match_objects">>,
+                    <<"value">> => Id,
+                    <<"predicate">> => qarg(<<"predicate">>, Args, undefined)
+                };
+            true -> []
+        end,
+        if
+            CG =/= undefined ->
+                #{
+                    <<"term">> => <<"content_group">>,
+                    <<"value">> => CG
+                };
+            true -> []
+        end,
         #{
             <<"term">> => <<"sort">>,
             <<"value">> => <<"-rsc.publication_start">>
         }
     ],
-    search_query:search(#{ <<"q">> => Terms }, Context);
+    case lists:flatten(Terms) of
+        [ #{ <<"term">> := <<"sort">> } ] ->
+            #search_result{};
+        Terms1 ->
+            search_query:search(#{ <<"q">> => Terms1 }, Context)
+    end;
 
 %% @doc Return the rsc records that have similar objects
 search(<<"match_objects_cats">>, Args, _OffsetLimit, Context) ->
