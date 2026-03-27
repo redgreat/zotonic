@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2014-2022 Marc Worrell
+%% @copyright 2014-2025 Marc Worrell
 %% @doc Event handling for the filestore admin functions
+%% @end
 
-%% Copyright 2014-2022 Marc Worrell
+%% Copyright 2014-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -21,7 +22,8 @@
 -export([
     event/2,
     task_file_to_local/1,
-    task_file_to_remote/1
+    task_file_to_remote/1,
+    testcred/1
     ]).
 
 -include_lib("zotonic_core/include/zotonic.hrl").
@@ -31,33 +33,39 @@
 event(#submit{message=admin_filestore}, Context) ->
     case z_acl:is_allowed(use, mod_admin_config, Context) of
         true ->
-            S3Url = noslash(z_string:trim(z_context:get_q(<<"s3url">>, Context))),
-            S3Key = z_string:trim(z_context:get_q(<<"s3key">>, Context)),
-            S3Secret = z_string:trim(z_context:get_q(<<"s3secret">>, Context)),
-            Service = url2service(S3Url),
-            IsUploadEnabled = z_convert:to_bool(z_context:get_q(<<"is_upload_enabled">>, Context)),
-            IsCreateBucket = z_convert:to_bool(z_context:get_q(<<"is_create_bucket">>, Context)),
-            IsLocalKeep = z_convert:to_bool(z_context:get_q(<<"is_local_keep">>, Context)),
-            DeleteInterval = z_context:get_q(<<"delete_interval">>, Context),
-            case testcred(Service, S3Url, S3Key, S3Secret, IsCreateBucket) of
-                ok ->
-                    m_config:set_value(mod_filestore, service, Service, Context),
-                    m_config:set_value(mod_filestore, s3url, S3Url, Context),
-                    m_config:set_value(mod_filestore, s3key, S3Key, Context),
-                    m_config:set_value(mod_filestore, s3secret, S3Secret, Context),
-                    m_config:set_value(mod_filestore, is_local_keep, IsLocalKeep, Context),
-                    m_config:set_value(mod_filestore, is_upload_enabled, IsUploadEnabled, Context),
-                    m_config:set_value(mod_filestore, delete_interval, DeleteInterval, Context),
-                    z_render:wire([
-                            {hide, [{target, "s3error"}]},
-                            {hide, [{target, "s3error-queue"}]},
-                            {fade_in, [{target, "s3ok"}]}
-                        ], Context);
-                {error, _} ->
-                    z_render:wire([
-                            {hide, [{target, "s3ok"}]},
-                            {fade_in, [{target, "s3error"}]}
-                        ], Context)
+            case filestore_config:is_config_locked() of
+                false ->
+                    S3Url = noslash(z_string:trim(z_context:get_q(<<"s3url">>, Context))),
+                    S3Key = z_string:trim(z_context:get_q(<<"s3key">>, Context)),
+                    S3Secret = z_string:trim(z_context:get_q(<<"s3secret">>, Context)),
+                    Service = url2service(S3Url),
+                    IsUploadEnabled = z_convert:to_bool(z_context:get_q(<<"is_upload_enabled">>, Context)),
+                    IsCreateBucket = z_convert:to_bool(z_context:get_q(<<"is_create_bucket">>, Context)),
+                    IsLocalKeep = z_convert:to_bool(z_context:get_q(<<"is_local_keep">>, Context)),
+                    DeleteInterval = z_context:get_q(<<"delete_interval">>, Context),
+                    TLS = filestore_config:tls_options(Context),
+                    case testcred(Service, S3Url, S3Key, S3Secret, TLS, IsCreateBucket) of
+                        ok ->
+                            m_config:set_value(mod_filestore, service, Service, Context),
+                            m_config:set_value(mod_filestore, s3url, S3Url, Context),
+                            m_config:set_value(mod_filestore, s3key, S3Key, Context),
+                            m_config:set_value(mod_filestore, s3secret, S3Secret, Context),
+                            m_config:set_value(mod_filestore, is_local_keep, IsLocalKeep, Context),
+                            m_config:set_value(mod_filestore, is_upload_enabled, IsUploadEnabled, Context),
+                            m_config:set_value(mod_filestore, delete_interval, DeleteInterval, Context),
+                            z_render:wire([
+                                    {hide, [{target, "s3error"}]},
+                                    {hide, [{target, "s3error-queue"}]},
+                                    {fade_in, [{target, "s3ok"}]}
+                                ], Context);
+                        {error, _} ->
+                            z_render:wire([
+                                    {hide, [{target, "s3ok"}]},
+                                    {fade_in, [{target, "s3error"}]}
+                                ], Context)
+                    end;
+                true ->
+                    z_render:growl_error(?__("The settings are locked by the system configuration.", Context), Context)
             end;
         false ->
             z_render:growl_error(?__("You are not allowed to change these settings.", Context), Context)
@@ -75,6 +83,30 @@ event(#postback{message={admin_filestore_queue, [{is_to_cloud, true}]}}, Context
             queue_upload_all(Context);
         false ->
             z_render:growl_error(?__("You are not allowed to change these settings.", Context), Context)
+    end;
+event(#postback{message={admin_filestore_test_credentials, _Args}}, Context) ->
+    case z_acl:is_allowed(use, mod_admin_config, Context)
+        orelse z_acl:is_allowed(use, mod_filestore, Context)
+    of
+        true ->
+            case testcred(Context) of
+                ok ->
+                    z_render:wire([
+                            {hide, [{target, "s3error"}]},
+                            {fade_in, [{target, "s3ok"}]}
+                        ], Context);
+                {error, _Reason} ->
+                    z_render:wire([
+                            {hide, [{target, "s3ok"}]},
+                            {fade_in, [{target, "s3error"}]}
+                        ], Context)
+            end;
+        false ->
+            z_render:wire([
+                    {hide, [{target, "s3error"}]},
+                    {hide, [{target, "s3ok"}]}
+                ], Context),
+            z_render:growl_error(?__("You are not allowed to use this.", Context), Context)
     end.
 
 -define(DATA, <<"Geen wolkje aan de lucht.">>).
@@ -94,21 +126,38 @@ service2mod(<<"s3">>) -> s3filez;
 service2mod(<<"ftp">>) -> ftpfilez;
 service2mod(<<"webdav">>) -> webdavfilez.
 
+
+%% @doc Try to put a file onto the remote server, testing the credentials.
+-spec testcred(Context) -> ok | {error, Reason} when
+    Context :: z:context(),
+    Reason :: term().
+testcred(Context) ->
+    Service = filestore_config:service(Context),
+    S3Url = filestore_config:s3url(Context),
+    S3Key = filestore_config:s3key(Context),
+    S3Secret = filestore_config:s3secret(Context),
+    TLS = filestore_config:tls_options(Context),
+    testcred(Service, S3Url, S3Key, S3Secret, TLS, true).
+
 % Try a put, get, and delete sequence
-testcred(<<>>, _, _, _, _) ->
+testcred(<<>>, _, _, _, _, _) ->
     ok;
-testcred(Service, S3Url, S3Key, S3Secret, IsCreateBucket)
+testcred(Service, S3Url, S3Key, S3Secret, TLSOptions, IsCreateBucket)
     when is_binary(S3Url), is_binary(S3Key), is_binary(S3Secret) ->
-    case testcred_file(Service, S3Url, S3Key, S3Secret) of
+    case testcred_file(Service, S3Url, S3Key, S3Secret, TLSOptions) of
         ok ->
             ok;
         {error, enoent} when IsCreateBucket ->
             % Bucket might not exist, try creating it
-            Cred = {S3Key, S3Secret},
+            Cred = #{
+                username => S3Key,
+                password => S3Secret,
+                tls_options => TLSOptions
+            },
             Mod = service2mod(Service),
             case Mod:create_bucket(Cred, S3Url) of
                 ok ->
-                    testcred_file(Service, S3Url, S3Key, S3Secret);
+                    testcred_file(Service, S3Url, S3Key, S3Secret, TLSOptions);
                 {error, Reason} = Error ->
                     ?LOG_ERROR(#{
                         text => <<"S3 could not create bucket">>,
@@ -123,11 +172,15 @@ testcred(Service, S3Url, S3Key, S3Secret, IsCreateBucket)
             Error
     end.
 
-testcred_file(Service, S3Url, S3Key, S3Secret)
+testcred_file(Service, S3Url, S3Key, S3Secret, TLSOptions)
     when is_binary(S3Url),
          is_binary(S3Key),
          is_binary(S3Secret) ->
-    Cred = {S3Key, S3Secret},
+    Cred = #{
+        username => S3Key,
+        password => S3Secret,
+        tls_options => TLSOptions
+    },
     Url = <<S3Url/binary, $/, "-zotonic-filestore-test-file-">>,
     Data = iolist_to_binary([?DATA, " ", z_ids:identifier()]),
     Mod = service2mod(Service),
@@ -174,7 +227,7 @@ testcred_file(Service, S3Url, S3Key, S3Secret)
             }),
             Error
     end;
-testcred_file(_, _, _, _) ->
+testcred_file(_, _, _, _, _) ->
     {error, filestore_unconfigured}.
 
 
@@ -190,11 +243,12 @@ noslash(B) ->
 
 
 queue_upload_all(Context) ->
-    Service = m_config:get_value(mod_filestore, service, <<"s3">>, Context),
-    S3Url = m_config:get_value(mod_filestore, s3url, Context),
-    S3Key = m_config:get_value(mod_filestore, s3key, Context),
-    S3Secret = m_config:get_value(mod_filestore, s3secret, Context),
-    case testcred_file(Service, S3Url, S3Key, S3Secret) of
+    Service = filestore_config:service(Context),
+    S3Url = filestore_config:s3url(Context),
+    S3Key = filestore_config:s3key(Context),
+    S3Secret = filestore_config:s3secret(Context),
+    TLSOptions = filestore_config:tls_options(Context),
+    case testcred_file(Service, S3Url, S3Key, S3Secret, TLSOptions) of
         ok ->
             mod_filestore:queue_all(Context),
             z_pivot_rsc:delete_task(?MODULE, task_file_to_local, <<>>, Context),

@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2019 Marc Worrell
 %% @doc Url encode the path_info arguments set by the dispatcher.
+%% @end
 
 %% Copyright 2019 Marc Worrell
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(scomp_base_cotonic_pathname_search).
+-moduledoc("
+Todo
+
+Not yet documented.
+").
 -author("Marc Worrell <marc@worrell.nl").
 -behaviour(zotonic_scomp).
 

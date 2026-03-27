@@ -26,6 +26,23 @@
 %%% THE SOFTWARE.
 
 -module(filter_ljust).
+-moduledoc("
+Justifies the value in a field of a certain width to the left, with spaces.
+
+For example:
+
+
+```django
+{{ value|ljust:7 }}
+```
+
+When value is `hello` then the output is `hello__` (with spaces).
+
+Justifying only works for single byte character values. At this moment there is no support for multi-byte unicode characters.
+
+See also
+
+[rjust](/id/doc_template_filter_filter_rjust), [center](/id/doc_template_filter_filter_center)").
 -export([ljust/3]).
 
 -author('rsaccon@gmail.com').

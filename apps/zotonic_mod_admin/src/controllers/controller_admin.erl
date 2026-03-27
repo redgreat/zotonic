@@ -1,6 +1,7 @@
 %% @author Tim Benniks <tim@timbenniks.com>
 %% @copyright 2009 Tim Benniks.
 %% @doc Admin webmachine_controller.
+%% @end
 
 %% Copyright 2009 Tim Benniks
 %%
@@ -17,6 +18,16 @@
 %% limitations under the License.
 
 -module(controller_admin).
+-moduledoc("
+The admin controller is the main controller behind which admin pages are served. Its main purpose is that it does an
+authentication check (Is current user allowed to `use` the module `mod_admin`).
+
+The template parameter decides which admin template gets served, and defaults to admin.tpl.
+
+Todo
+
+Extend documentation
+").
 -author("Tim Benniks <tim@timbenniks.com>").
 
 -export([

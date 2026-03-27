@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Validator for checking if an input value evaluates to "true"
+%% @end
 
-%% Copyright 2009 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,31 @@
 %% limitations under the License.
 
 -module(validator_base_acceptance).
+-moduledoc("
+Check if an input value evaluates to true.
+
+Can be used in combination with a check box that must be checked on submit.
+
+For example:
+
+
+```django
+<input type=\"checkbox\" id=\"accept\" name=\"accept\" value=\"1\" />
+{% validate id=\"accept\" type={acceptance} %}
+```
+
+
+
+Arguments
+---------
+
+| Argument          | Description                                                                 | Example                                      |
+| ----------------- | --------------------------------------------------------------------------- | -------------------------------------------- |
+| failure\\\\_message | Message to be shown when the input is true. Defaults to “Must be accepted.” | `failure_message=\"Please agree to our TOS.\"` |
+
+See also
+
+[Forms and validation](/id/doc_developerguide_forms_and_validation#guide-validators)").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_validator/5, validate/5]).
 
@@ -25,7 +51,8 @@ render_validator(acceptance, TriggerId, _TargetId, Args, _Context)  ->
 	Script     = [<<"z_add_validator(\"">>,TriggerId,<<"\", \"acceptance\", ">>, JsObject, <<");\n">>],
 	{[], Script}.
 
-%% @spec validate(Type, Name, Values, Args, Context) -> {ok, AcceptedValue} | {error,Id,Error}
+-spec validate(term(), term(), term(), list(), z:context()) ->
+    {{ok, term()}, z:context()} | {{error, term(), term()}, z:context()}.
 %%          Error = invalid | novalue
 validate(acceptance, Id, Value, _Args, Context) ->
     case z_utils:is_true(Value) of

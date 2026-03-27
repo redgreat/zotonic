@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc Set the focus on an input element.
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,9 @@
 %% limitations under the License.
 
 -module(action_wires_focus).
+-moduledoc("
+Add a `$(..).focus()` jQuery call to the target element to give it input focus.
+").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_action/4]).
 

@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2023 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Model for the zotonic site configuration
+%% @end
 
-%% Copyright 2009-2023 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,109 @@
 %% limitations under the License.
 
 -module(m_site).
+-moduledoc("
+Retrieve information that is stored in the [site
+configuration](/id/doc_developerguide_configuration_site_configuration#ref-site-configuration). If you want to query
+values from the config table instead, you should use [m_config](/id/doc_model_model_config).
+
+Note
+
+In general the site configurarion is only accessible via the `m.site` template model for users with administrator
+rights. Exceptions are keys starting with `public` or `{{ m.site.title }}`, hostname configurations and the *paglen*.
+
+
+
+Fetch a site configuration key
+------------------------------
+
+Example, fetching the site configuration key \"hostname\":
+
+
+```django
+{{ m.site.hostname }}
+```
+
+
+
+Fetching all configurations
+---------------------------
+
+It is easy to loop over all site configurations:
+
+
+```django
+{% for key, value in m.site %}
+  {{ key }} -- {{ value }} <br>
+{% endfor %}
+```
+
+
+
+Overriding config values
+------------------------
+
+Zotonic has two places where a site's configuration is kept. One is in the site's config files, the other in the
+config table. The config table (accessible through [m_config](/id/doc_model_model_config)) overrules any module
+settings from the config file, for rows where the module key of the config value is set to site.
+
+Within the site configuration, you can override module-specific configuration: Module configurations are defined with a
+property key equal to the module name, with a property list as value. For example:
+
+
+```erlang
+{mod_foo, [ {hostname, \"localhost\"} ]}
+```
+
+will put the default \"hostname\" setting of the imaginary `mod_foo` module to `localhost`.
+
+
+
+Default config values
+---------------------
+
+Sites have the following default config settings:
+
+| Property                    | Description                                                                      | Example value       |
+| --------------------------- | -------------------------------------------------------------------------------- | ------------------- |
+| environment | Set the DTAP status of the site. Can be one of production, development, test, acceptance, education or backup. Default: production | `development` |
+| hostname | The hostname of the site | `example.com` |
+| title | The title of the site. | `\"My Awesome Blog\"` |
+| protocol | The main protocol of the site. Used to construct urls. Default \"http\". | `\"https\"` |
+| document_domain | The document domain used for cross domain iframe javascripts. Default is the same as the cookie_domain. | `www.example.com` |
+| cookie_domain | The domain to use on cookies. This defaults to undefined, which will equal the domain of the current request. | `.example.com` |
+| session_expire_inactive | User inactivity timeout after seeing that the user has not been active. Default: 14400 (4 hours) | `3600 (1 hour)` |
+| autologon_expire | Auto logon cookie timeout setting. Default: 15552000 (3 months) | `31536000 (365 days)` |
+| site | The name of the site, an atom. | `wwwzotonic.` |
+| hsts | Indicate if the site should use Strict Transport Security. When set, the browser will no longer use insecure http to access the site. Warning: Be sure your site is accessible via https before enabeling this feature. Default: false | `true` |
+| hsts_maxage               | The time, in seconds which browsers are allowed to remember the HSTS setting of the site. Default: 17280000 (200 days) |                     |
+| hsts_include_subdomains | When set, the browser also does not use http for subdomains. Default: false      |                     |
+| hsts_preload              | When set, the site's HSTS setting will be stored by the browser vender. This means that browsers only use https. Use with care, because it is hard to revert wrong settings. Default: false |                     |
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/site/...` | Return the current site name (atom) from the request context. |
+| `get` | `/environment/...` | Return the resolved DTAP environment (`development`, `test`, `acceptance`, `production`, `education`, or `backup`). |
+| `get` | `/hostname/...` | Return the configured hostname for the current site/request. |
+| `get` | `/hostname_port/...` | Return hostname including configured HTTP port. |
+| `get` | `/hostname_ssl_port/...` | Return hostname including configured HTTPS port. |
+| `get` | `/hostalias/...` | Return the configured `hostalias` site setting. |
+| `get` | `/protocol/...` | Return the site protocol used for URL construction (typically `http` or `https`). |
+| `get` | `/is_ssl/...` | Return whether the site is currently considered SSL-enabled. |
+| `get` | `/title/...` | Return the configured site title as binary text. |
+| `get` | `/subtitle/...` | Return the configured site subtitle as binary text (empty binary when unset). |
+| `get` | `/email_from/...` | Return the effective sender address used for outgoing email. |
+| `get` | `/pagelen/...` | Return default search page length (configured value or fallback default). |
+| `get` | `/language/...` | Return the current request language. |
+| `get` | `/default_language/...` | Return the site default language. |
+| `get` | `/security/...` | Return generated `security.txt` data (`contact`, optional `policy`/`hiring`, and `expires`). |
+| `get` | `/+key/...` | Return site config value for `+key` when the key is public or caller is admin; otherwise `undefined`. |
+| `get` | `/` | Return all site configuration key/value pairs for admins, otherwise an empty list. No further lookups. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 -behaviour(zotonic_model).
@@ -25,9 +129,11 @@
 -export([
     m_get/3,
     environment/1,
+    title/1,
     security/1,
     load_config/1,
     load_config/2,
+    reload_config/1,
     all/1,
     get/2,
     get/3,
@@ -55,11 +161,7 @@ m_get([ <<"protocol">> | Rest ], _Msg, Context) ->
 m_get([ <<"is_ssl">> | Rest ], _Msg, Context) ->
     {ok, {z_context:is_ssl_site(Context), Rest}};
 m_get([ <<"title">> | Rest ], _Msg, Context) ->
-    Title = case m_config:get_value(site, title, Context) of
-        undefined -> <<>>;
-        T -> unicode:characters_to_binary(T)
-    end,
-    {ok, {Title, Rest}};
+    {ok, {title(Context), Rest}};
 m_get([ <<"subtitle">> | Rest ], _Msg, Context) ->
     SubTitle = case m_config:get_value(site, subtitle, Context) of
         undefined -> <<>>;
@@ -102,8 +204,10 @@ m_get(_Vs, _Msg, _Context) ->
     {error, unknown_path}.
 
 
-%% @doc Return the current DTAP environment
--spec environment( z:context() ) -> z:environment().
+%% @doc Return the current DTAP environment.
+-spec environment( z:context() | atom() ) -> z:environment().
+environment(Site) when is_atom(Site) ->
+    environment(z_context:new(Site));
 environment(Context) ->
     environment_atom( m_site:get(environment, Context) ).
 
@@ -121,6 +225,17 @@ environment_atom(L) when is_list(L) ->
 environment_atom(B) when is_binary(B) ->
     environment_atom( binary_to_existing_atom(B, utf8) ).
 
+-spec title(z:context()) -> binary().
+title(Context) ->
+    case m_config:get_value(site, title, Context) of
+        undefined ->
+            <<>>;
+        Title ->
+            case unicode:characters_to_binary(Title) of
+                T when is_binary(T) -> T;
+                _ -> <<>>
+            end
+    end.
 
 -spec load_config(atom()|z:context()) -> ok | {error, term()}.
 load_config(#context{} = Context) ->
@@ -142,6 +257,44 @@ load_config(Site, Config) when is_atom(Site) ->
             application:set_env(Site, K, V)
         end,
         Config).
+
+-spec reload_config(SiteOrContext) -> ok | {error, Reason} when
+    SiteOrContext :: atom() | z:context(),
+    Reason :: term().
+reload_config(#context{} = Context) ->
+    reload_config(z_context:site(Context));
+reload_config(Site) when is_atom(Site) ->
+    case z_sites_manager:reload_site_config(Site) of
+        ok ->
+            case load_config(Site) of
+                ok ->
+                    ?LOG_INFO(#{
+                        in => zotonic_core,
+                        text => <<"Reloaded site configuration">>,
+                        result => ok,
+                        site => Site
+                    }),
+                    z_sites_dispatcher:update_dispatchinfo();
+                {error, Reason} = Error ->
+                    ?LOG_ERROR(#{
+                        in => zotonic_core,
+                        text => <<"Could not reload site configuration">>,
+                        result => error,
+                        reason => Reason,
+                        site => Site
+                    }),
+                    Error
+            end;
+        {error, Reason} = Error ->
+            ?LOG_ERROR(#{
+                in => zotonic_core,
+                text => <<"Could not reload site configuration">>,
+                result => error,
+                reason => Reason,
+                site => Site
+            }),
+            Error
+    end.
 
 %% @doc Return the complete site configuration
 -spec all(atom()|z:context()) -> list().

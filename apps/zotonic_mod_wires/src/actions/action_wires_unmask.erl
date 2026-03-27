@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc Unmask an element previously masked by the mask action
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,21 @@
 %% limitations under the License.
 
 -module(action_wires_unmask).
+-moduledoc("
+Removes a mask that was placed over an element using the [mask](/id/doc_template_action_action_mask) action.
+
+Example:
+
+
+```django
+{% wire action={unmask target=\"logon_outer\"} %}
+```
+
+In this example the mask over the logon_outer div will be removed.
+
+See also
+
+action [mask](/id/doc_template_action_action_mask).").
 
 -export([render_action/4]).
 

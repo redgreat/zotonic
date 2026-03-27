@@ -18,6 +18,59 @@
 %% limitations under the License.
 
 -module(mod_video).
+-moduledoc("
+Adds support for viewing and handling video medium items.
+
+This module converts uploaded videos to h264 and adds a poster (preview) image of the movie.
+
+Note
+
+mod_video uses the command-line utilities `ffmpeg` and `ffprobe`. For mod_video to function correctly they must be
+present in the search path of Zotonic.
+
+
+
+Uploading & conversion
+----------------------
+
+The video module hooks into the media model to intercept any video upload. If a video is uploaded the following steps
+are done:
+
+*   The video is moved to the site’s `files/video_queue/` directory.
+*   A video conversion task is added to the pivot task queue, this task will restart a video conversion in case of any problems.
+*   A video conversion process is started, supervised by the video module.
+*   The uploaded medium is replaced by a static `lib/images/processing.png` image.
+
+Only a single video conversion process is allowed to run at any time. This to prevent overloading the server.
+
+After the video is converted the resource’s medium record is replaced with the converted video. The frame at 10
+seconds (at 1 second for movies shorter than 30 seconds) is added as the preview image of the video.
+
+If a video can’t be converted then the video is replaced with the error image, found in `lib/images/broken.png`.
+
+
+
+Viewing
+-------
+
+The video module extends the `{% media %}` tag for viewing `video/mp4` videos.
+
+It uses the template `_video_viewer.tpl` for viewing. For the best viewing results, add `css/video.css` to your included
+css files.
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_media_stillimage`: Return the filename of a still image to be used for image tags using `supervisor:start_link`.
+- `observe_media_upload_preprocess`: If a video file is uploaded, queue it for conversion to video/mp4 using `z_video_info:info`.
+- `observe_media_upload_props`: After a video file is processed, generate a preview image using `z_media_archive:abspath`.
+- `observe_media_viewer`: Return the media viewer for the mp4 video using `z_template:render`.
+
+See also
+
+[mod_video_embed](/id/doc_module_mod_video_embed), [mod_oembed](/id/doc_module_mod_oembed), [mod_audio](/id/doc_module_mod_audio), [media](/id/doc_template_tag_tag_media)").
 
 -author("Marc Worrell <marc@worrell.nl>").
 
@@ -257,14 +310,7 @@ post_insert_fun(Id, Medium, Upload, ProcessNr, Context) ->
     ok = z_filelib:ensure_dir(QueuePath),
     case z_tempfile:is_tempfile(UploadedFile) of
         true ->
-            case file:rename(UploadedFile, QueuePath) of
-                %% cross-fs rename is not supported by erlang, so copy and delete the file
-                {error, exdev} ->
-                    {ok, _BytesCopied} = file:copy(UploadedFile, QueuePath),
-                    ok = file:delete(UploadedFile);
-                ok ->
-                    ok
-            end;
+            ok = z_filelib:rename(UploadedFile, QueuePath);
         false ->
             {ok, _BytesCopied} = file:copy(UploadedFile, QueuePath)
     end,
@@ -288,4 +334,3 @@ queue_path(Filename, Context) ->
 
 preview_filename(Id, Context) ->
     m_media:make_preview_unique(Id, <<".jpg">>, Context).
-

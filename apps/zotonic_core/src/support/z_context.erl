@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2024  Marc Worrell
+%% @copyright 2009-2026  Marc Worrell
 %% @doc Request context for Zotonic request evaluation.
 %% @end
 
-%% Copyright 2009-2024 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@
 
     db_pool/1,
     db_driver/1,
+    db_connection/1,
 
     is_request/1,
     is_session/1,
@@ -61,6 +62,7 @@
 
     get_envdata/1,
     set_envdata/2,
+    is_sensitive/1,
 
     get_controller_module/1,
     set_controller_module/2,
@@ -158,7 +160,7 @@
 
 
 %% @doc Return a new empty context, no request is initialized.
--spec new( z:context() | atom() | cowboy_req:req() ) -> z:context().
+-spec new( z:context() | atom() | undefined ) -> z:context().
 new(#context{} = C) ->
     #context{
         site = C#context.site,
@@ -181,8 +183,10 @@ new(undefined) ->
         undefined -> throw({error, no_site_enabled})
     end;
 new(Site) when is_atom(Site) ->
-    set_default_language_tz(
-        set_server_names(#context{ site = Site })).
+    Context = set_default_language_tz(
+        set_server_names(#context{ site = Site })),
+    z_memo:flush(Context),
+    Context.
 
 %% @doc Create a new context record for a site with a certain language
 -spec new( Site :: atom(), Language :: atom() | [ atom() ] ) -> z:context().
@@ -250,12 +254,11 @@ set_server_names(#context{ site = Site } = Context) ->
         translation_table = z_trans_server:table(Site)
     },
     Context1#context{
-        % session_manager=list_to_atom("z_session_manager"++SiteAsList),
         db = { z_db_pool:db_pool_name(Site), z_db_pool:db_driver(Context1) }
     }.
 
 
-%% @doc Maps the site in the request to a site in the sites folder.
+%% @doc Return the site name for the context or request.
 -spec site(z:context() | cowboy_req:req()) -> atom().
 site(#context{site=Site}) ->
     Site;
@@ -356,7 +359,6 @@ prune_for_database(Context) ->
         db = Context#context.db,
         dbc = Context#context.dbc,
         depcache = Context#context.depcache,
-        % session_manager=Context#context.session_manager,
         dispatcher = Context#context.dispatcher,
         template_server = Context#context.template_server,
         scomp_server = Context#context.scomp_server,
@@ -501,6 +503,11 @@ db_pool(#context{ db = {Pool, _Driver} }) ->
 db_driver(#context{ db = {_Pool, Driver} }) ->
     Driver.
 
+%% @doc Fetch the database connection
+-spec db_connection(z:context()) -> undefined | pid().
+db_connection(#context{ dbc = Connection }) ->
+    Connection.
+
 %% @doc Fetch the protocol for absolute urls referring to the site (always https).
 -spec site_protocol(z:context()) -> binary().
 site_protocol(_Context) ->
@@ -598,6 +605,17 @@ init_cowdata(Req, Env, Context) when is_map(Req); Req =:= undefined ->
         cowreq = Req,
         cowenv = Env
     }.
+
+%% @doc Check if the current request controller options has the 'sensitive' option
+%% set. If so then tracing should be disabled.
+-spec is_sensitive(z:context()) -> boolean().
+is_sensitive(Context) ->
+    case get_envdata(Context) of
+        #{ cowmachine_controller_options := Opts } when is_list(Opts) ->
+            proplists:get_bool(sensitive, Opts);
+        _ ->
+            false
+    end.
 
 %% @doc Get the resource module handling the request.
 -spec get_controller_module(z:context()) -> atom() | undefined.
@@ -808,7 +826,8 @@ get_q_all(Key, #context{ props = Props }) ->
     end.
 
 
-%% @doc Get all query/post args, filter the zotonic internal args.
+%% @doc Get all query/post args, filter the zotonic internal args. The "*" dispatch argument
+%% is also removed, as it is not a named argument.
 -spec get_q_all_noz(z:context()) -> list({binary(), z:qvalue()}).
 get_q_all_noz(Context) ->
     lists:filter(fun({X,_}) -> not is_zotonic_arg(X) end, get_q_all(Context)).
@@ -818,7 +837,7 @@ get_q_all_noz(Context) ->
 get_q_map(Context) ->
     Qs = get_q_all(Context),
     {ok, Props} = z_props:from_qs(Qs),
-    maps:remove(<<"*">>, Props).
+    Props.
 
 %% @doc Get all query/post args, transformed into a map.
 %% Removes Zotonic vars and the dispatcher '*' variable.
@@ -826,7 +845,7 @@ get_q_map(Context) ->
 get_q_map_noz(Context) ->
     Qs = get_q_all_noz(Context),
     {ok, Props} = z_props:from_qs(Qs),
-    maps:remove(<<"*">>, Props).
+    Props.
 
 %% @doc Filter all Zotonic and dispatcher vars from a map.
 -spec without_zotonic_args(map()) -> map().
@@ -867,12 +886,14 @@ without_zotonic_args(Map) ->
 % - z_msg
 % - z_comet
 % - z_postback_data
+% - "*"
 
 -spec is_zotonic_arg(binary()) -> boolean().
 is_zotonic_arg(<<"postback">>) -> true;
 is_zotonic_arg(<<"triggervalue">>) -> true;
 is_zotonic_arg(<<"zotonic_", _/binary>>) -> true;
 is_zotonic_arg(<<"z_", _/binary>>) -> true;
+is_zotonic_arg(<<"*">>) -> true;
 is_zotonic_arg(_) -> false.
 
 
@@ -1034,9 +1055,42 @@ session_id(Context) ->
 
 %% @doc Set the cotonic session id. Mostly used when on a request with
 %%      a cotonic session id in the cookie.
--spec set_session_id( binary(), z:context() ) -> z:context().
+-spec set_session_id( binary() | undefined, z:context() ) -> z:context().
+set_session_id(undefined, Context) ->
+    set(session_id, undefined, Context);
+set_session_id(Sid, Context) when size(Sid) =< 64 ->
+    case is_valid_session_id(Sid) of
+        true ->
+            set(session_id, Sid, Context);
+        false ->
+            ?LOG_WARNING(#{
+                in => zotonic_core,
+                text => <<"Trying to set invalid session id">>,
+                result => error,
+                reason => session_id_invalid,
+                session_id => Sid
+            }),
+            Context
+    end;
 set_session_id(Sid, Context) ->
-    set(session_id, Sid, Context).
+    ?LOG_WARNING(#{
+        in => zotonic_core,
+        text => <<"Trying to set invalid session id">>,
+        result => error,
+        reason => session_id_invalid,
+        session_id => Sid
+    }),
+    Context.
+
+is_valid_session_id(<<>>) -> true;
+is_valid_session_id(<<C, R/binary>>) when
+        (C >= $0 andalso C =< $9);
+        (C >= $a andalso C =< $z);
+        (C >= $A andalso C =< $Z);
+        (C == $-)
+     -> is_valid_session_id(R);
+is_valid_session_id(_) ->
+    false.
 
 %% @doc Set the value of the context variable Key to Value
 -spec set( atom(), term(), z:context() ) -> z:context().
@@ -1259,24 +1313,24 @@ csp_nonce(Context) ->
 %% @doc Set a response header for the request in the context.
 -spec set_resp_header(binary(), binary(), z:context()) -> z:context().
 set_resp_header(<<"vary">>, <<"*">>, #context{cowreq=Req} = Context) when is_map(Req) ->
-    cowmachine_req:set_resp_header(<<"vary">>, <<"*">>, Context);
+    #context{} = cowmachine_req:set_resp_header(<<"vary">>, <<"*">>, Context);
 set_resp_header(<<"vary">>, Value, #context{cowreq=Req} = Context) when is_map(Req) ->
-    case cowmachine_req:get_resp_header(<<"vary">>, Context) of
+    #context{} = case cowmachine_req:get_resp_header(<<"vary">>, Context) of
         undefined ->
-            cowmachine_req:set_resp_header(<<"vary">>, Value, Context);
+            #context{} = cowmachine_req:set_resp_header(<<"vary">>, Value, Context);
         <<"*">> ->
             Context;
         Curr ->
             Value1 = <<Curr/binary, ", ", Value/binary>>,
-            cowmachine_req:set_resp_header(<<"vary">>, Value1, Context)
+            #context{} = cowmachine_req:set_resp_header(<<"vary">>, Value1, Context)
     end;
 set_resp_header(Header, Value, #context{cowreq=Req} = Context) when is_map(Req) ->
-    cowmachine_req:set_resp_header(Header, Value, Context).
+    #context{} = cowmachine_req:set_resp_header(Header, Value, Context).
 
 %% @doc Set multiple response headers for the request in the context.
 -spec set_resp_headers([ {binary(), binary()} ], z:context()) -> z:context().
 set_resp_headers(Headers, #context{cowreq=Req} = Context) when is_map(Req) ->
-    cowmachine_req:set_resp_headers(Headers, Context).
+    #context{} = cowmachine_req:set_resp_headers(Headers, Context).
 
 %% @doc Get a response header
 -spec get_resp_header(binary(), z:context()) -> binary() | undefined.
@@ -1348,37 +1402,41 @@ parse_post_body(Context) ->
 %% z_context:ensure_all/1.
 -spec set_nocache_headers(z:context()) -> z:context().
 set_nocache_headers(Context = #context{cowreq=Req}) when is_map(Req) ->
-    cowmachine_req:set_resp_headers([
+    Context1 = #context{} = cowmachine_req:set_resp_headers([
             {<<"cache-control">>, <<"no-store, no-cache, must-revalidate, private, post-check=0, pre-check=0">>},
             {<<"expires">>, <<"Wed, 10 Dec 2008 14:30:00 GMT">>},
             {<<"p3p">>, <<"CP=\"NOI ADM DEV PSAi COM NAV OUR OTRo STP IND DEM\"">>},
             {<<"pragma">>, <<"nocache">>}
         ],
-        Context).
+        Context),
+    Context1.
 
 %% @doc Set security related headers. This can be modified by observing the
 %%      'security_headers' notification.
 -spec set_security_headers( z:context() ) -> z:context().
 set_security_headers(Context) ->
+    CSP = #content_security_header{
+        default_src    = [ <<"'self'">> ],
+        script_src     = [ <<"'self'">>, <<"'nonce-'">>, <<"https:">> ],
+        % style-src: 'unsafe-inline' is needed for OpenLayers, replace with 'nonce-'
+        % if no support is needed.
+        style_src      = [ <<"'self'">>, <<"https:">>, <<"'unsafe-inline'">> ],
+        style_src_attr = [ <<"'self'">>, <<"'unsafe-inline'">> ],
+        img_src        = [ <<"'self'">>, <<"https:">>, <<"data:">> ],
+        media_src      = [ <<"'self'">>, <<"https:">>, <<"data:">>, <<"mediastream:">> ],
+        font_src       = [ <<"'self'">>, <<"https:">> ],
+        frame_src      = [ <<"'self'">>, <<"https:">> ],
+        object_src     = [ <<"'none'">> ],
+        form_action    = [ <<"'self'">> ],
+        worker_src     = [ <<"'self'">>, <<"blob:">> ],
+        connect_src    = [ <<"'self'">>, <<"https:">>, <<"wss:">> ]
+    },
+    CSP1 = z_notifier:foldr(CSP, CSP, Context),
     Default = [
-        {<<"content-security-policy">>, <<
-            "default-src 'self'; "
-            "script-src 'self' 'nonce-' https:; "
-            "style-src 'self' https: 'unsafe-inline'; " % Unsafe-inline is needed for OpenLayers
-            % "style-src 'self' 'nonce-' https:; "
-            % "style-src-attr 'self' 'unsafe-inline'; "
-            "img-src 'self' data: https:; "
-            "media-src 'self' data: https: mediastream:; "
-            "font-src 'self' https:; "
-            "frame-src 'self' https:; "
-            "object-src 'none'; "
-            "form-action 'self'; "
-            "worker-src 'self' blob:; "
-            "connect-src 'self' https:"
-         >>},
+        {<<"content-security-policy">>, flatten_csp(CSP1)},
         {<<"x-content-type-options">>, <<"nosniff">>},
         {<<"x-permitted-cross-domain-policies">>, <<"none">>},
-        {<<"referrer-policy">>, <<"origin-when-cross-origin">>}
+        {<<"referrer-policy">>, <<"strict-origin-when-cross-origin">>}
     ],
     Default1 = case z_context:get(allow_frame, Context, false) of
         true -> Default;
@@ -1407,7 +1465,48 @@ set_security_headers(Context) ->
                 | proplists:delete(<<"content-security-policy">>, SecurityHeaders)
             ]
     end,
-    cowmachine_req:set_resp_headers(SecurityHeaders1, Context).
+    set_resp_headers(SecurityHeaders1, Context).
+
+flatten_csp(CSP) ->
+    Directives = lists:filtermap(
+        fun
+            ({_Directive, []}) -> false;
+            ({Directive, L}) ->
+                L1 = lists:usort(L),
+                L2 = case lists:member(<<"'unsafe-inline'">>, L1) of
+                    true -> lists:delete(<<"'nonce-'">>, L1);
+                    false -> L1
+                end,
+                D = [ Directive | [ [ " ", V ] || V <- L2 ] ],
+                {true, D}
+        end,
+        [
+            {<<"child-src">>, CSP#content_security_header.child_src},
+            {<<"connect-src">>, CSP#content_security_header.connect_src},
+            {<<"default-src">>, CSP#content_security_header.default_src},
+            {<<"font-src">>, CSP#content_security_header.font_src},
+            {<<"frame-src">>, CSP#content_security_header.frame_src},
+            {<<"img-src">>, CSP#content_security_header.img_src},
+            {<<"manifest-src">>, CSP#content_security_header.manifest_src},
+            {<<"media-src">>, CSP#content_security_header.media_src},
+            {<<"object-src">>, CSP#content_security_header.object_src},
+            {<<"script-src">>, CSP#content_security_header.script_src},
+            {<<"script-src-elem">>, CSP#content_security_header.script_src_elem},
+            {<<"script-src-attr">>, CSP#content_security_header.script_src_attr},
+            {<<"style-src">>, CSP#content_security_header.style_src},
+            {<<"style-src-elem">>, CSP#content_security_header.style_src_elem},
+            {<<"style-src-attr">>, CSP#content_security_header.style_src_attr},
+            {<<"worker-src">>, CSP#content_security_header.worker_src},
+            % Document directives
+            {<<"base-uri">>, CSP#content_security_header.base_uri},
+            {<<"sandbox">>, CSP#content_security_header.sandbox},
+            % Navigation directives
+            {<<"frame-ancestors">>, CSP#content_security_header.frame_ancestors},
+            {<<"form-action">>, CSP#content_security_header.form_action},
+            % Reporting directives
+            {<<"report-to">>, CSP#content_security_header.report_to}
+        ]),
+    iolist_to_binary(lists:join("; ", Directives)).
 
 %% @doc Create a hsts header based on the current settings. The result is cached
 %%      for quick access.
@@ -1418,7 +1517,7 @@ hsts_header(Context) ->
             F = fun() ->
                 MaxAge = z_convert:to_integer(m_config:get_value(site, hsts_maxage, ?HSTS_MAXAGE, Context)),
                 IncludeSubdomains = z_convert:to_bool(m_config:get_value(site, hsts_include_subdomains, false, Context)),
-                Preload = z_convert:to_bool(m_config:get_value(site, preload, false, Context)),
+                Preload = z_convert:to_bool(m_config:get_value(site, hsts_preload, false, Context)),
                 Options = case {IncludeSubdomains, Preload} of
                     {true, true} -> <<"; includeSubDomains; preload">>;
                     {true, _} -> <<"; includeSubDomains">>;
@@ -1492,7 +1591,7 @@ set_cookie(Key, Value, Options, Context) ->
                    none -> [{domain, z_context:cookie_domain(Context)}|Options]
                end,
     Options2 = [ {secure, true} | proplists:delete(secure, Options1) ],
-    cowmachine_req:set_resp_cookie(Key, ValueBin, Options2, Context).
+    #context{} = cowmachine_req:set_resp_cookie(Key, ValueBin, Options2, Context).
 
 %% @doc Read a cookie value from the current request.
 -spec get_cookie(binary(), z:context()) -> binary() | undefined.

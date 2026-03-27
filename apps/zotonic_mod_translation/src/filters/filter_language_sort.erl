@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2019 Marc Worrell
 %% @doc Sort a list or map of languages by their sort_key
+%% @end
 
 %% Copyright 2019 Marc Worrell
 %%
@@ -17,6 +18,25 @@
 %% limitations under the License.
 
 -module(filter_language_sort).
+-moduledoc("
+Sort a list of language codes or map with languages on their sort key. Return a list of `{Code, LanguageProps}` pairs.
+
+LanguageProps is a map:
+
+
+```erlang
+#{
+    fallback => [],
+    language => <<\"nl\">>,
+    language_atom => nl,
+    name => <<\"Nederlands\">>,
+    name_en => <<\"Dutch\">>,
+    sort_key => <<\"dutch\">>,
+    sublanguages => [
+    ]
+}
+```
+").
 -export([
     language_sort/2
 ]).

@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2016 Marc Worrell
 %% @doc is_number filter, test if a value is a number
+%% @end
 
 %% Copyright 2016 Marc Worrell
 %%
@@ -17,9 +18,16 @@
 %% limitations under the License.
 
 -module(filter_is_number).
+-moduledoc("
+Test if a value is a number (integer or floating point):
+
+
+```django
+{% if 1|is_number %}Yes, this is a number{% endif %}
+```
+").
 -export([is_number/2]).
 
-is_number(V, _Context) when is_integer(V) -> true;
-is_number(V, _Context) when is_float(V) -> true;
+is_number(V, _Context) when is_number(V) -> true;
 is_number(_, _Context) -> false.
 

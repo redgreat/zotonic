@@ -1,6 +1,6 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @author Rusty Klophaus
-%% @copyright 2008-2009 Rusty Klophaus, 2009-2023 Marc Worrell
+%% @copyright 2008-2026 Rusty Klophaus, 2009-2026 Marc Worrell
 %% @doc Render routines using wires and actions.
 %%      Based on Nitrogen, which is copyright (c) 2008-2009 Rusty Klophaus
 %% @end
@@ -8,7 +8,7 @@
 %% This is the MIT license.
 %%
 %% Copyright (c) 2008-2009 Rusty Klophaus
-%% Copyright (c) 2009-2024 Marc Worrell
+%% Copyright (c) 2009-2026 Marc Worrell
 %%
 %% Permission is hereby granted, free of charge, to any person obtaining a copy
 %% of this software and associated documentation files (the "Software"), to deal
@@ -115,6 +115,8 @@
 
     wire/2, wire/3, wire/4,
 
+    action_with_args/2,
+
     % From script
     add_script/2,
     get_script/1,
@@ -172,8 +174,17 @@ output(<<>>, RenderState, Context) ->
     {[], RenderState, Context};
 output(B, RenderState, Context) when is_binary(B) ->
     {B, RenderState, Context};
-output(List, RenderState, Context) ->
-    output1(List, RenderState, Context, []).
+output(List, RenderState, Context) when is_list(List) ->
+    output1(List, RenderState, Context, []);
+output(undefined, RenderState, Context) ->
+    {<<>>, RenderState, Context};
+output(V, RenderState, Context) when is_number(V); is_atom(V) ->
+    {z_convert:to_binary(V), RenderState, Context};
+output(#trans{} = Trans, RenderState, Context) ->
+    V = z_trans:lookup_fallback(Trans, Context),
+    output(V, RenderState, Context);
+output(V, RenderState, Context) ->
+    output1([V], RenderState, Context, []).
 
 %% @doc Recursively walk through the output, replacing all context placeholders with their rendered output
 output1(B, RenderState, Context, Acc) when is_binary(B) ->
@@ -262,7 +273,7 @@ combine1(X,Y) -> [X,Y].
 render(Mixed, Context) ->
     RS = get_render_state(Context),
     RS1 = append_render_state(Mixed, RS, Context),
-    set_render_state(RS1, Context).
+    #context{} = set_render_state(RS1, Context).
 
 append_render_state(undefined, RenderState, _Context) ->
     RenderState;
@@ -359,7 +370,7 @@ render_actions(TriggerId, TargetId, {Action, Args}, Context) ->
     end.
 
 
-%% @spec validator(TriggerID::string(), TargetID::string(), Validator::#validator{}, Context::#context{}) -> #context{}
+-spec validator(string(), string(), term(), term()) -> term().
 %% @doc Add an input validator to the list of known validators, used when rendering custom validators
 validator(TriggerId, TargetId, Validator, Context) ->
     V = {TriggerId, TargetId, Validator},
@@ -494,40 +505,40 @@ update_iframe(IFrameId, Html, Context) ->
 
 %% @doc Set the contents of all elements matching the css selector to the the html fragment
 update_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"html">>, <<".widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"html">>, <<".widgetManager()">>, Context).
 
 insert_before_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"insertBefore">>, <<".widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"insertBefore">>, <<".widgetManager()">>, Context).
 
 insert_after_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"insertAfter">>, <<".widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"insertAfter">>, <<".widgetManager()">>, Context).
 
 replace_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"replaceWith">>, <<".widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"replaceAll">>, <<".widgetManager()">>, Context).
 
 insert_top_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"prependTo">>, <<".widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"prependTo">>, <<".widgetManager()">>, Context).
 
 insert_bottom_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"appendTo">>, <<".widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"appendTo">>, <<".widgetManager()">>, Context).
 
 appear_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"html">>, <<".fadeIn().widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"html">>, <<".fadeIn().widgetManager()">>, Context).
 
 appear_replace_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"replaceWith">>, <<".fadeIn().widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"replaceAll">>, <<".fadeIn().widgetManager()">>, Context).
 
 appear_top_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"prependTo">>, <<".fadeIn().widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"prependTo">>, <<".fadeIn().widgetManager()">>, Context).
 
 appear_bottom_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"appendTo">>, <<".fadeIn().widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"appendTo">>, <<".fadeIn().widgetManager()">>, Context).
 
 appear_before_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"insertBefore">>, <<".fadeIn().widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"insertBefore">>, <<".fadeIn().widgetManager()">>, Context).
 
 appear_after_selector(CssSelector, Html, Context) ->
-    update_render_state(CssSelector, Html, <<"insertAfter">>, <<".fadeIn().widgetManager()">>, Context).
+    update_context_render_state(CssSelector, Html, <<"insertAfter">>, <<".fadeIn().widgetManager()">>, Context).
 
 
 %% @doc Set the value of an input element.
@@ -537,16 +548,16 @@ set_value(TargetId, Value, Context) ->
 set_value_selector(CssSelector, undefined, Context) ->
     set_value_selector(CssSelector, "", Context);
 set_value_selector(CssSelector, Value, Context) ->
-    update_render_state(CssSelector, Value, <<"val">>, "", Context).
+    update_context_render_state(CssSelector, Value, <<"val">>, "", Context).
 
 
 %% @doc Render an update js as into the render state
-update_render_state(CssSelector, Html, Function, AfterEffects, Context) ->
+update_context_render_state(CssSelector, Html, Function, AfterEffects, Context) ->
     {Html1, Context1} = render_html(Html, Context),
     Update = update_js(CssSelector, Html1, Function, AfterEffects),
     RS = get_render_state(Context1),
     RS1 = RS#render_state{ updates = [ {Update} | RS#render_state.updates ] },
-    set_render_state(RS1, Context1).
+    #context{} = set_render_state(RS1, Context1).
 
 
 %% @doc Set the contents of all elements matching the css selector to the the html fragment
@@ -554,7 +565,7 @@ update_selector_js(CssSelector, Html) ->
     update_js(CssSelector, Html, <<"html">>, <<".widgetManager()">>).
 
 replace_selector_js(CssSelector, Html) ->
-    update_js(CssSelector, Html, <<"replaceWith">>, <<".widgetManager()">>).
+    update_js(CssSelector, Html, <<"replaceAll">>, <<".widgetManager()">>).
 
 insert_top_selector_js(CssSelector, Html) ->
     update_js(CssSelector, Html, <<"prependTo">>, <<".widgetManager()">>).
@@ -572,7 +583,7 @@ appear_selector_js(CssSelector, Html) ->
     update_js(CssSelector, Html, <<"html">>, <<".fadeIn().widgetManager()">>).
 
 appear_replace_selector_js(CssSelector, Html) ->
-    update_js(CssSelector, Html, <<"replaceWith">>, <<".fadeIn().widgetManager()">>).
+    update_js(CssSelector, Html, <<"replaceAll">>, <<".fadeIn().widgetManager()">>).
 
 appear_top_selector_js(CssSelector, Html) ->
     update_js(CssSelector, Html, <<"prependTo">>, <<".fadeIn().widgetManager()">>).
@@ -592,8 +603,6 @@ update_js(CssSelector, Html, <<"html">>, AfterEffects) ->
     update_js_selector_first(CssSelector, Html, <<"html">>, AfterEffects);
 update_js(CssSelector, Html, <<"val">>, AfterEffects) ->
     update_js_selector_first(CssSelector, Html, <<"val">>, AfterEffects);
-update_js(CssSelector, Html, <<"replaceWith">>, AfterEffects) ->
-    update_js_selector_first(CssSelector, Html, <<"replaceWith">>, AfterEffects);
 update_js(CssSelector, Html, Function, AfterEffects) ->
     [ <<"z_text_to_nodes(\"">>, z_utils:js_escape(Html), $", $),
       $., Function, $(, quote_css_selector(CssSelector), $),
@@ -639,9 +648,15 @@ is_utf8(_) -> false.
 
 %%% SIMPLE FUNCTION TO SHOW DIALOG OR GROWL (uses the dialog and growl actions) %%%
 
+-spec dialog(Title, Template, Vars, Context) -> Context1 when
+    Title :: string() | binary() | z:trans() | undefined,
+    Template :: template_compiler:template() | #module_index{},
+    Vars :: list() | map(),
+    Context :: z:context(),
+    Context1 :: z:context().
 dialog(undefined, Template, Vars, Context) ->
     dialog(<<>>, Template, Vars, Context);
-dialog(Title, Template, Vars, Context) ->
+dialog(Title, Template, Vars, #context{} = Context) ->
     IsCatinclude = z_convert:to_bool(get_value(catinclude, Vars)),
     Template1 = case Template of
         {cat, _} -> Template;
@@ -686,13 +701,21 @@ get_value(K, Map) when is_map(Map) ->
 get_value(K, List) when is_list(List) ->
     proplists:get_value(K, List).
 
-dialog_close(Context) ->
+-spec dialog_close(z:context()) -> z:context().
+dialog_close(#context{} = Context) ->
     wire({dialog_close, []}, Context).
 
-dialog_close(Level, Context) ->
+-spec dialog_close(Level, z:context()) -> z:context() when
+    Level :: non_neg_integer().
+dialog_close(Level, #context{} = Context) ->
     wire({dialog_close, [{level, Level}]}, Context).
 
-overlay(Template, Vars, Context) ->
+-spec overlay(Template, Vars, Context) -> Context1 when
+    Template :: template_compiler:template() | #module_index{},
+    Vars :: list() | map(),
+    Context :: z:context(),
+    Context1 :: z:context().
+overlay(Template, Vars, #context{} = Context) ->
     MixedHtml = z_template:render(Template, Vars, Context),
     {Html, Context1} = render_to_iolist(MixedHtml, Context),
     OverlayArgs = [
@@ -703,16 +726,19 @@ overlay(Template, Vars, Context) ->
     Script = [<<"z_dialog_overlay_open(">>, z_utils:js_object(OverlayArgs, Context1), $), $; ],
     wire({script, [{script, Script}]}, Context1).
 
-overlay_close(Context) ->
+-spec overlay_close(z:context()) -> z:context().
+overlay_close(#context{} = Context) ->
     wire({overlay_close, []}, Context).
 
-growl(Text, Context) ->
+-spec growl(unicode:chardata(), z:context()) -> z:context().
+growl(Text, #context{} = Context) ->
     wire({growl, [{text, Text}]}, Context).
 
-growl_error(Text, Context) ->
+-spec growl_error(unicode:chardata(), z:context()) -> z:context().
+growl_error(Text, #context{} = Context) ->
     wire({growl, [{text, Text}, {type, "error"}]}, Context).
 
-growl(Text, Type, Stay, Context) ->
+growl(Text, Type, Stay, #context{} = Context) ->
     wire({growl, [{text, Text}, {type, Type}, {stay, Stay}]}, Context).
 
 
@@ -731,7 +757,7 @@ make_postback_info(Tag, EventType, TriggerId, TargetId, Delegate, Context) ->
 
 %% @doc Make a javascript to call the postback, posting an encoded string containing callback information.
 %% The PostbackTag is send to the server, EventType is normally the atom 'postback'.
-%% @spec make_postback(PostbackTag, EventType, TriggerId, TargetId, Delegate, Context) -> {JavascriptString, PickledPostback}
+-spec make_postback(term(), term(), term(), term(), term(), z:context()) -> {iodata(), term()}.
 make_postback(PostbackTag, EventType, TriggerId, TargetId, Delegate, Context) ->
     make_postback(PostbackTag, EventType, TriggerId, TargetId, Delegate, [], Context).
 
@@ -782,7 +808,7 @@ make_validation_postback(Validator, Args, Context) ->
 
 %% Add to the queue of wired actions. These will be rendered in get_script().
 
--spec wire(action() | [action()], ctx_rs()) -> ctx_rs().
+-spec wire(action() | [action()], z:context()) -> z:context().
 wire(Actions, Context) ->
     wire(<<>>, <<>>, Actions, Context).
 
@@ -810,6 +836,21 @@ flatten_list(L) when is_list(L) ->
     lists:flatten(L);
 flatten_list(Other) ->
     Other.
+
+%% @doc Prepend extra arguments to an action. The arguments are prepended to
+%% the list of action arguments, overruling or adding existing arguments.
+-spec action_with_args(Action, Args) -> Action1 when
+    Action :: MaybeAction | [ MaybeAction ],
+    MaybeAction :: action() | [ Action ] | undefined,
+    Args :: proplists:proplist(),
+    Action1 :: action() | [ action() ].
+action_with_args(Actions, Args) when is_list(Actions) ->
+    [ action_with_args(A, Args) || A <- Actions, A =/= undefined ];
+action_with_args(undefined, _Args) ->
+    [];
+action_with_args({Name, Args}, ExtraArgs) when is_list(ExtraArgs) ->
+    {Name, ExtraArgs ++ Args}.
+
 
 
 %% @doc Map a target id to a css selector
@@ -869,6 +910,8 @@ get_render_state(Context) ->
         #render_state{} = RS -> RS
     end.
 
+-spec set_render_state(render_state(), undefined | render_state()) -> render_state();
+                      (render_state(), z:context()) -> z:context().
 set_render_state(RS, undefined) -> RS;
 set_render_state(RS, #render_state{})  -> RS;
 set_render_state(RS, Context)  ->

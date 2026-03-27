@@ -54,7 +54,7 @@ logon_pw(Username, Password, Context) ->
     case m_identity:check_username_pw(Username, Password, Context) of
         {ok, Id} ->
             case logon(Id, Context) of
-                {ok, Context1} -> Context1;
+                {ok, Context1} -> {true, Context1};
                 {error, _Reason} -> {false, Context}
             end;
         {error, _Reason} -> {false, Context}
@@ -89,27 +89,47 @@ logon(UserId, Context) ->
 
 %% @doc Allow an admin user to switch to another user account.
 -spec logon_switch( m_rsc:resource_id(), z:context() ) -> {ok, z:context()} | {error, eacces}.
-logon_switch(UserId, Context) ->
-    case m_rsc:exists(UserId, Context) andalso z_acl:is_admin(Context) of
+logon_switch(ToUserId, Context) ->
+    case is_allowed_switch_user(ToUserId, Context) of
         true ->
-            Context1 = z_acl:logon_prefs(UserId, Context),
-            Context2 = z_notifier:foldl(#auth_logon{ id = UserId }, Context1, Context1),
+            Context1 = z_acl:logon_prefs(ToUserId, Context),
+            Context2 = z_notifier:foldl(#auth_logon{ id = ToUserId }, Context1, Context1),
             {ok, Context2};
         false ->
             {error, eacces}
     end.
 
-%% @doc Allow an admin user to switch to another user account.
--spec logon_switch( m_rsc:resource_id(), m_rsc:resource_id(), z:context() ) -> {ok, z:context()} | {error, eacces}.
-logon_switch(UserId, SudoUserId, Context) ->
-    case m_rsc:exists(UserId, Context) andalso z_acl:is_admin( z_acl:logon(SudoUserId, Context) ) of
+%% @doc Allow an admin user to switch to another user account. The ActingUserId is
+%% typically the user_id of the user that initially logged on. This is stored in the
+%% auth_options as 'sudo_user_id' and is set when performing the switch.
+-spec logon_switch(ToUserId, ActingUserId, Context) -> {ok, Context1} | {error, eacces} when
+    ToUserId :: m_rsc:resource_id(),
+    ActingUserId :: m_rsc:resource_id(),
+    Context :: z:context(),
+    Context1 :: z:context().
+logon_switch(ToUserId, ActingUserId, Context) ->
+    OriginalSudoUserContext = z_acl:logon(ActingUserId, Context),
+    case is_allowed_switch_user(ToUserId, OriginalSudoUserContext) of
         true ->
-            Context1 = z_acl:logon_prefs(UserId, Context),
-            Context2 = z_notifier:foldl(#auth_logon{ id = UserId }, Context1, Context1),
+            Context1 = z_acl:logon_prefs(ToUserId, Context),
+            Context2 = z_notifier:foldl(#auth_logon{ id = ToUserId }, Context1, Context1),
             {ok, Context2};
         false ->
             {error, eacces}
     end.
+
+is_allowed_switch_user(?ACL_ADMIN_USER_ID, Context) ->
+    % Hard coded protection against logging in as the admin user from any account that
+    % is not the admin user.
+    z_acl:user(Context) =:= ?ACL_ADMIN_USER_ID;
+is_allowed_switch_user(ToUserId, Context) ->
+    m_rsc:exists(ToUserId, Context)
+    andalso (
+               z_acl:user(Context) =:= ToUserId
+        orelse z_acl:sudo_user(Context) =:= ToUserId
+        orelse z_acl:is_admin(Context)
+        orelse z_acl:is_allowed(sudo_user, ToUserId, Context)
+    ).
 
 %% @doc Logon a user and redirect the user agent. The MQTT websocket MUST be connected.
 -spec logon_redirect( m_rsc:resource_id(), binary() | undefined, z:context() ) -> ok | {error, term()}.
@@ -124,7 +144,9 @@ logon_redirect(UserId, Url, Context) ->
         {error, _} = Error -> Error
     end.
 
-%% @doc Request the client's auth worker to re-authenticate as a new user
+%% @doc Request the client's auth worker to re-authenticate as a new user. The ACL
+%% for this operation is checked by z_auth:logon_switch/3, which is called by the
+%% controller_authentication when asked to make the switch.
 -spec switch_user( m_rsc:resource_id(), z:context() ) -> ok | {error, eacces}.
 switch_user(UserId, Context) when is_integer(UserId) ->
     case z_notifier:first(#auth_client_switch_user{
@@ -150,8 +172,9 @@ logoff(Context) ->
 %% of the user. This enables tracking where users are active. This _must_ be
 %% a session initiated from a remote IP address. If no remote IP address is
 %% known then the user session is not logged.
--spec publish_user_session(Context) -> ok when
-    Context :: z:context().
+-spec publish_user_session(Context) -> ok | {error, Reason} when
+    Context :: z:context(),
+    Reason :: no_user | no_session | term().
 publish_user_session(Context) ->
     case is_auth(Context) of
         true ->
@@ -183,8 +206,9 @@ publish_user_session(Context) ->
 
 %% @doc Remove the retained user session value, this removes the session from the overview
 %% of active sessions. Called when resetting the authentication cookies.
--spec unpublish_user_session(Context) -> ok when
-    Context :: z:context().
+-spec unpublish_user_session(Context) -> ok | {error, Reason} when
+    Context :: z:context(),
+    Reason :: no_user | no_session | term().
 unpublish_user_session(Context) ->
     case is_auth(Context) of
         true ->
@@ -205,6 +229,9 @@ unpublish_user_session(Context) ->
 
 %% @doc Check if the user is enabled, a user is enabled when the rsc is published and within its publication date range.
 -spec is_enabled( m_rsc:resource_id(), z:context() ) -> boolean().
+is_enabled(?ACL_ADMIN_USER_ID, _Context) ->
+    % The admin user is always enabled.
+    true;
 is_enabled(UserId, Context) ->
     case z_notifier:first(#user_is_enabled{id=UserId}, Context) of
         undefined ->

@@ -1,6 +1,7 @@
 %% @author Maas-Maarten Zeeman <mmzeeman@xs4all.nl>
 %% @copyright 2019-2020 Maas-Maarten Zeeman <mmzeeman@xs4all.nl>
 %% @doc A controller which always returns 204 no-content.
+%% @end
 
 %% Copyright 2019-2020 Maas-Maarten Zeeman
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(controller_nocontent).
+-moduledoc("
+Todo
+
+Not yet documented.
+").
 
 -author("Maas-Maarten Zeeman <mmzeeman@xs4all.nl>").
 

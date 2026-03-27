@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'escape_ical' filter, escape a value for an ical file.
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,26 @@
 %% limitations under the License.
 
 -module(filter_escape_ical).
+-moduledoc("
+Escape the value according to the RFC2445 rules.
+
+A double quote becomes `\\\"`; a comma becomes `\\,`; a colon becomes `\":\"`; a semicolon becomes `\\;`; a backslash
+becomes `\\\\` and a newline becomes `\\n`.
+
+It is also ensures that any single line is maximum 70 characters long by splitting the lines with newline/space combinations.
+
+For example:
+
+
+```django
+{{ value|escape_ical }}
+```
+
+When the value is `abc:d;e` then the output is `abc\":\"d\\;e`.
+
+See also
+
+[escape](/id/doc_template_filter_filter_escape)").
 -export([escape_ical/2]).
 
 

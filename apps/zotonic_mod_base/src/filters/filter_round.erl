@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2017 Marc Worrell
 %% @doc Round a value to integer
+%% @end
 
 %% Copyright 2017 Marc Worrell
 %%
@@ -17,6 +18,18 @@
 %% limitations under the License.
 
 -module(filter_round).
+-moduledoc("
+Round a floating point value to the nearest integer.
+
+Example:
+
+
+```django
+{{ 3.5|round }}
+```
+
+Results in the integer value `4`.
+").
 
 -export([round/2]).
 

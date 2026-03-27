@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2021 Marc Worrell
 %% @doc 'sanitize_url' filter, sanitize an URL. The url must be an unescaped URL.
+%% @end
 
 %% Copyright 2021 Marc Worrell
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(filter_sanitize_url).
+-moduledoc("
+Sanitize an URL. Removes URLs that might be dangerous, like `javascript:` URLs.
+
+Ensure that the input to this filter is HTML unescaped. As the filter is not unescaping any HTML entities.
+").
 
 -export([
     sanitize_url/2

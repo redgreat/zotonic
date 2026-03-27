@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2024 Marc Worrell
+%% @copyright 2009-2025 Marc Worrell
 %% @doc Identify files, fetch metadata about an image
 %% @end
 
-%% Copyright 2009-2024 Marc Worrell, Konstantin Nikiforov
+%% Copyright 2009-2025 Marc Worrell, Konstantin Nikiforov
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -312,14 +312,38 @@ identify_file_unix(Cmd, File, OriginalFilename) ->
 %% @doc Try to identify the file using image magick
 -spec identify_file_imagemagick(os_family(), file:filename_all(), undefined | mime_type()) -> {ok, media_info()} | {error, term()}.
 identify_file_imagemagick(OsFamily, ImageFile, MimeFile) ->
-    identify_file_imagemagick_1(os:find_executable("identify"), OsFamily, ImageFile, MimeFile).
+    identify_file_imagemagick_1(imagemagick_identify_cmd(), OsFamily, ImageFile, MimeFile).
+
+%% @doc Find ImageMagick's 'identify' command on the current system, if any.
+%% This prefers the 'magick identify' command introduced in v7 if possible and
+%% otherwise falls back to the 'identify' one of previous ImageMagick's versions.
+%% Note: since system installations don't change that often, the result is cached.
+-spec imagemagick_identify_cmd() -> Cmd | false when Cmd :: string().
+imagemagick_identify_cmd() ->
+    Key = {?MODULE, imagemagick_identify_cmd},
+    case persistent_term:get(Key, undefined) of
+        undefined ->
+            ResultCmd = case os:find_executable("magick") of
+                false ->
+                    case os:find_executable("identify") of
+                        false -> false;
+                        Cmd -> z_filelib:os_filename(Cmd)
+                    end;
+                Cmd ->
+                    z_filelib:os_filename(Cmd) ++ " identify"
+            end,
+            persistent_term:put(Key, ResultCmd),
+            ResultCmd;
+        ResultCmd ->
+            ResultCmd
+    end.
 
 identify_file_imagemagick_1(false, _OsFamily, _ImageFile, _MimeFile) ->
-    ?LOG_ERROR("Please install ImageMagick 'identify' for identifying the type of uploaded files."),
-    {error, "'identify' not installed"};
+    ?LOG_ERROR("Please install ImageMagick for identifying the type of uploaded files."),
+    {error, imagemagick_missing};
 identify_file_imagemagick_1(Cmd, OsFamily, ImageFile, MimeTypeFromFile) ->
     CleanedImageFile = z_filelib:os_filename(z_convert:to_list(ImageFile) ++ "[0]"),
-    CmdOutput = os:cmd(z_filelib:os_filename(Cmd)
+    CmdOutput = os:cmd(Cmd
                        ++ " -quiet "
                        ++ z_convert:to_list(CleanedImageFile)
                        ++ " 2> " ++ devnull(OsFamily)),
@@ -333,7 +357,7 @@ identify_file_imagemagick_1(Cmd, OsFamily, ImageFile, MimeTypeFromFile) ->
                     string:tokens(CmdOutput, "\n")),
     case Lines of
         [] ->
-            Err = os:cmd(z_filelib:os_filename(Cmd)
+            Err = os:cmd(Cmd
                          ++ " -quiet "
                          ++ z_convert:to_list(CleanedImageFile)
                          ++ " 2>&1"),
@@ -432,7 +456,7 @@ devnull(unix)  -> "/dev/null".
 %% - PBM which is a known problem of IM 6.8.9 (used on Ubuntu 16)
 %% - AI see https://github.com/ImageMagick/ImageMagick/discussions/6724
 -spec im_mime(binary(), mime_type()|undefined) -> mime_type().
-im_mime(<<"PBM">>, MimeFile) when MimeFile =/= undefined -> MimeFile;
+im_mime(<<"PBM">>, MimeFile) when is_binary(MimeFile) -> MimeFile;
 im_mime(<<"AI">>, <<"application/pdf">>) -> <<"application/pdf">>;
 im_mime(Type, _) -> mime(Type).
 
@@ -481,7 +505,7 @@ identify_magicnumber(File) ->
 -spec extension(Mime) -> filename_extension()
     when Mime :: string()
                | binary()
-               | {binary(), binary(), list()}.
+               | cow_http_hd:media_type().
 extension(Mime) ->
     extension(Mime, undefined).
 
@@ -492,7 +516,7 @@ extension(Mime) ->
 -spec extension(Mime, PreferExtension, z:context()) -> filename_extension()
     when Mime :: string()
                | binary()
-               | {binary(), binary(), list()},
+               | cow_http_hd:media_type(),
          PreferExtension :: string()
                           | binary()
                           | undefined.
@@ -518,7 +542,7 @@ maybe_binary(L) -> z_convert:to_binary(L).
 -spec extension(Mime, PreferExtension) -> filename_extension()
     when Mime :: string()
                | binary()
-               | {binary(), binary(), list()},
+               | cow_http_hd:media_type(),
          PreferExtension :: string()
                           | binary()
                           | undefined.

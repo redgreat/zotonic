@@ -1,10 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2010 Marc Worrell
-%% Date: 2010-05-05
-%%
+%% @copyright 2010-2026 Marc Worrell
 %% @doc Model for the zotonic modules. List all modules, enabled or disabled.
+%% @end
 
-%% Copyright 2010 Marc Worrell
+%% Copyright 2010-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -19,6 +18,43 @@
 %% limitations under the License.
 
 -module(m_modules).
+-moduledoc("
+Access information about which [modules](/id/doc_developerguide_modules#guide-modules) are installed and which ones are active.
+
+To test if a module is activated, for instance mod_signup:
+
+
+```django
+{% if m.modules.active.mod_signup %}
+    {# Do things that depend on mod_signup #}
+{% endif %}
+```
+
+To print a list of all active modules:
+
+
+```django
+{{ m.modules.all|pprint }}
+```
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/all/...` | Return all known module names (enabled and disabled) for the current site. |
+| `get` | `/enabled/...` | Return names of currently enabled modules for the site. |
+| `get` | `/disabled/...` | Return names of currently disabled modules for the site. |
+| `get` | `/active/+module/...` | Return whether module `+module` is active/enabled on the current site. |
+| `get` | `/info/+module/...` | Return module metadata/info map for module `+module`. |
+| `get` | `/uninstalled` | Return uninstalled module names available on disk but not enabled for the site (`z_module_manager:get_uninstalled`). No further lookups. |
+| `get` | `/provided/+service/...` | Return whether service `+service` is provided by an active module. |
+| `get` | `/provided` | Return services currently provided by enabled modules (`z_module_manager:get_provided`). No further lookups. |
+| `get` | `/get_provided/...` | Return provider modules for a requested service list (`z_module_manager:scan_provided`). |
+| `get` | `/get_depending/...` | Return modules that depend on the given module/service list (`z_module_manager:scan_depending`). |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 -behaviour(zotonic_model).
@@ -57,6 +93,9 @@ m_get([ <<"info">>, Module | Rest ], _Msg, Context) ->
         false ->
             {error, eacces}
     end;
+m_get([ <<"uninstalled">> ], _Msg, Context) ->
+    Uninstalled = z_module_manager:get_uninstalled(Context),
+    {ok, {Uninstalled, []}};
 m_get([ <<"provided">>, Service | Rest ], _Msg, Context) ->
     M = safe_to_atom(Service),
     IsProvided = z_module_manager:is_provided(M, Context),

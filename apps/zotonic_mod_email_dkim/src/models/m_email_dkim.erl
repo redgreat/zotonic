@@ -1,8 +1,9 @@
 %% @author Arjan Scherpenisse <arjan@miraclethings.nl>
-%% @copyright 2016-2020 Arjan Scherpenisse
+%% @copyright 2016-2026 Arjan Scherpenisse
 %% @doc DKIM signing of outgoing emails
+%% @end
 
-%% Copyright 2016-2020 Arjan Scherpenisse
+%% Copyright 2016-2026 Arjan Scherpenisse
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,26 @@
 %% limitations under the License.
 
 -module(m_email_dkim).
+-moduledoc("
+DomainKeys Identified Mail Signatures (RFC 6376) is a method to add a signature to outgoing emails. This enables
+recipients to check who sent an email and if the email was not changed in transit.
+
+This module generates an RSA keypair which will be used when signing outgoing emails.
+
+The keys are stored in the security directory of Zotonic.
+
+If this module is activated then a panel with information is added to the System > Email configuration menu. The panel
+includes information about the DKIM key that needs to be added to the DNS.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/admin_info/...` | Return DKIM admin info (selector/domain/status) for site mail signing configuration. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 -author("Arjan Scherpenisse <arjan@miraclethings.nl>").
 
 -behaviour(zotonic_model).

@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'in_future' filter, test if a date is in the future.
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,24 @@
 %% limitations under the License.
 
 -module(filter_in_future).
+-moduledoc("
+Tests if a date is in the future.
+
+Tests if the value is a date and in the future. The value must be a tuple of the format `{Y,M,D}` or
+`{{Y,M,D},{H,I,S}}`. When the value is not a date, or datetime, the result will be `undefined`.
+
+For example:
+
+
+```django
+{% if value|in_future %}That day has yet to come.{% endif %}
+```
+
+This outputs “That day has yet to come.” if the value is a date and in the future.
+
+See also
+
+[in_past](/id/doc_template_filter_filter_in_past)").
 -export([in_future/2]).
 
 

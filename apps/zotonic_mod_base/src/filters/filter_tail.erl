@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'tail' filter, return the tail of a list
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,23 @@
 %% limitations under the License.
 
 -module(filter_tail).
+-moduledoc("
+Fetch the tail of a list.
+
+Returns the tail of a list. Useful when you want to skip the first element of a list when looping.
+
+For example:
+
+
+```django
+{% for a in value|tail %}{{ a|format_number }}{% endfor %}
+```
+
+When value is the list `[1,2,3]` then the output is `23`.
+
+See also
+
+[first](/id/doc_template_filter_filter_first), [nthtail](/id/doc_template_filter_filter_nthtail)").
 -export([tail/2]).
 
 

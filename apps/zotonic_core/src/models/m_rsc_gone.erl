@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2012-2023 Marc Worrell
+%% @copyright 2012-2026 Marc Worrell
 %% @doc Model for administration of deleted resources and their possible new location.
 %% @end
 
-%% Copyright 2012-2023 Marc Worrell
+%% Copyright 2012-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,58 @@
 %% limitations under the License.
 
 -module(m_rsc_gone).
+-moduledoc("
+This model tracks deleted resources (see [m_rsc](/id/doc_model_model_rsc)). Its primary goal is to be able to
+determine if a resource never existed, has been deleted or has been replaced by another resource.
+
+
+
+Information kept
+----------------
+
+Only very basic information of the deleted resource is kept in the `rsc_gone` table. It is enough for referring to a new
+location, giving correct errors or to determine who deleted a resource.
+
+It is not enough to undelete a resource. The module [mod_backup](/id/doc_module_mod_backup) retains enough information
+about past versions to be able to undelete a resource. Currently there is no support for an undelete.
+
+
+
+Properties
+----------
+
+Whenever a [m_rsc](/id/doc_model_model_rsc) record is deleted some information from that resource is copied to the
+`rsc_gone` table.
+
+The following properties are saved:
+
+| Property           | Description                                                                      | Example value                         |
+| ------------------ | -------------------------------------------------------------------------------- | ------------------------------------- |
+| id | Id of the resource, an integer. | `42` |
+| new_id | If the resource is replaced by another resource then this is the id of that other resource. | `341` |
+| new_uri | If the resource is moved to another place on the web then this is the uri of the new location. | `<<\"<http://example.com/hello>\">>` |
+| name | The name (if any) of the deleted resource. | `<<\"page_hello\">>` |
+| uri | The uri of the authoritative source for the resource. | `<<\"<http://foo.bar/hello>\">>` |
+| page_path | The page path (if any) of the deleted resource. | `<<\"/hello\">>` |
+| is_authoritative | Whether the resource originated on this site or was imported and maintained on another site. Return a boolean. | `true` |
+| creator_id | The id of the creator of the deleted resource. | `1` |
+| created | The date the deleted resource was created. | `{{2008,12,10},{15,30,00}}` |
+| modifier_id | The id of the user that deleted the resource. | `2718` |
+| modified | The date the resource was deleted. | `{{2012,12,5},{23,59,59}}` |
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/+id/new_location/...` | Return category data for +id. Uses `get_new_location`. |
+| `get` | `/+id/is_gone/...` | Return whether gone (`is_gone`). |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+
+See also
+
+[The Zotonic data model](/id/doc_userguide_datamodel#guide-datamodel), [m_rsc](/id/doc_model_model_rsc)").
 -author("Marc Worrell <marc@worrell.nl").
 
 -behaviour(zotonic_model).
@@ -130,7 +182,9 @@ gone(Id, Context) when is_integer(Id) ->
 %%      Also sets the 'new id', which is the id that replaces the deleted id.
 gone(Id, NewId, Context) when is_integer(Id), is_integer(NewId) orelse NewId =:= undefined ->
     case z_db:assoc_row("
-            select id, name, version, page_path, uri, is_authoritative, creator_id, created
+            select id, is_authoritative, name, version,
+                   pivot_page_path as page_paths, uri,
+                   creator_id, created
             from rsc
             where id = $1
             ", [Id], Context)
@@ -200,7 +254,7 @@ install(Context) ->
                     version int not null,
                     uri character varying(2048),
                     name character varying(80),
-                    page_path character varying(80),
+                    page_paths character varying(80)[],
                     is_authoritative boolean NOT NULL DEFAULT true,
                     creator_id bigint,
                     modifier_id bigint,
@@ -213,7 +267,7 @@ install(Context) ->
 
             [] = z_db:q("CREATE INDEX IF NOT EXISTS rsc_gone_name_key ON rsc_gone(name)", Context),
             [] = z_db:q("CREATE INDEX IF NOT EXISTS rsc_gone_uri_key ON rsc_gone(uri)", Context),
-            [] = z_db:q("CREATE INDEX IF NOT EXISTS rsc_gone_page_path_key ON rsc_gone(page_path)", Context),
+            [] = z_db:q("CREATE INDEX IF NOT EXISTS rsc_gone_page_paths_key ON rsc_gone USING gin(page_paths)", Context),
             [] = z_db:q("CREATE INDEX IF NOT EXISTS rsc_gone_modified_key ON rsc_gone(modified)", Context),
             z_db:flush(Context),
             ok;
@@ -230,6 +284,19 @@ install(Context) ->
             case z_db:column_exists(rsc_gone, is_personal_data, Context) of
                 false ->
                     [] = z_db:q("ALTER TABLE rsc_gone ADD COLUMN is_personal_data boolean NOT NULL DEFAULT false", Context),
+                    z_db:flush(Context);
+                true ->
+                    ok
+            end,
+            % Check for page_paths column
+            case z_db:column_exists(rsc_gone, page_paths, Context) of
+                false ->
+                    [] = z_db:q("ALTER TABLE rsc_gone ADD COLUMN page_paths character varying(80)[]", Context),
+                    z_db:q("update rsc_gone
+                            set page_paths = array[page_path]
+                            where page_path is not null", Context),
+                    [] = z_db:q("ALTER TABLE rsc_gone DROP COLUMN page_path CASCADE", Context),
+                    [] = z_db:q("CREATE INDEX IF NOT EXISTS rsc_gone_page_paths_key ON rsc_gone USING gin(page_paths)", Context),
                     z_db:flush(Context);
                 true ->
                     ok

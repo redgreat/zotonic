@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2017 Marc Worrell
 %% @doc Calculate the maximu points for a test survey.
+%% @end
 
 %% Copyright 2017 Marc Worrell
 %%
@@ -17,6 +18,20 @@
 %% limitations under the License.
 
 -module(filter_survey_test_max_points).
+-moduledoc("
+Counts the total of all points that can be received for all *test* questions. Non *test* questions are not counted.
+
+Usage:
+
+
+```django
+{{ survey_id|survey_test_max_points }}
+```
+
+Return the number of points if all questions are corectly answered.
+
+See [mod_survey](/id/doc_module_mod_survey)
+").
 
 -export([
     survey_test_max_points/2

@@ -1,9 +1,9 @@
 %% @author Arjan Scherpenisse <arjan@scherpenisse.net>
-%% @copyright 2010-2024 Arjan Scherpenisse
+%% @copyright 2010-2026 Arjan Scherpenisse
 %% @doc Simple database logging.
 %% @end
 
-%% Copyright 2010-2024 Arjan Scherpenisse
+%% Copyright 2010-2026 Arjan Scherpenisse
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,64 @@
 %% limitations under the License.
 
 -module(mod_logging).
+-moduledoc("
+Logs messages to the database and adds log views to the admin.
+
+
+
+Logging messages to the database
+--------------------------------
+
+To persist a log message in the database, enable mod_logging in your Zotonic site. Then, in your code, send the
+`#zlog{}` notification:
+
+
+```erlang
+-include_lib(\"zotonic_core/include/zotonic.hrl\").
+
+some_function() ->
+    %% do some things
+
+    z_notifier:notify(
+        #zlog{
+            user_id = z_acl:user(Context),
+            props=#log_email{
+                severity = ?LOG_LEVEL_ERROR,
+                message_nr = MsgId,
+                mailer_status = bounce,
+                mailer_host = z_convert:ip_to_list(Peer),
+                envelop_to = BounceEmail,
+                envelop_from = \"<>\",
+                to_id = z_acl:user(Context),
+                props = []
+        }},
+        Context
+    );
+```
+
+
+
+E-mail log
+----------
+
+The e-mail log is a separate view, which lists which email messages have been sent to which recipients. Any mail that
+gets sent gets logged here.
+
+This module stores selected log events in the site database and provides admin views and APIs to inspect those logs, including e-mail delivery log entries.
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_acl_is_allowed`: Allow access to log resources only for users with the required log-view permissions.
+- `observe_admin_menu`: Add log viewers and log configuration entries to the admin menu.
+- `observe_search_query`: Provide module-specific search query handlers with ACL-aware filtering.
+- `observe_tick_1h`: Delete expired log records during hourly maintenance.
+
+See also
+
+For regular application logging, use [Logger](/id/doc_developerguide_logging#dev-logging) instead.").
 -author("Arjan Scherpenisse <arjan@scherpenisse.net>").
 -behaviour(gen_server).
 
@@ -26,6 +84,14 @@
 -mod_prio(1000).
 -mod_schema(2).
 -mod_depends([ cron ]).
+-mod_config([
+        #{
+            key => ui_log_disabled,
+            type => boolean,
+            default => false,
+            description => "Disable the logging of errors in the browser UI. This is useful for performance reasons."
+        }
+    ]).
 
 %% gen_server exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -257,7 +323,7 @@ is_log_client_active(Context) ->
 %%====================================================================
 %% API
 %%====================================================================
-%% @spec start_link(Args) -> {ok,Pid} | ignore | {error,Error}
+-spec start_link(list()) -> {ok, pid()} | ignore | {error, term()}.
 %% @doc Starts the server
 start_link(Args) when is_list(Args) ->
     gen_server:start_link(?MODULE, Args, []).
@@ -266,7 +332,8 @@ start_link(Args) when is_list(Args) ->
 %% gen_server callbacks
 %%====================================================================
 
-%% @spec init(Args) -> {ok, State} |
+-spec init(term()) -> {ok, term()} | {ok, term(), timeout() | hibernate} | ignore | {stop, term()}.
+%% init(Args) -> {ok, State} |
 %%                     {ok, State, Timeout} |
 %%                     ignore               |
 %%                     {stop, Reason}
@@ -282,7 +349,6 @@ init(Args) ->
     end,
     {ok, #state{ site = Site, dedup = #{} }}.
 
-%% @spec handle_call(Request, From, State) -> {reply, Reply, State} |
 %%                                      {reply, Reply, State, Timeout} |
 %%                                      {noreply, State} |
 %%                                      {noreply, State, Timeout} |
@@ -357,7 +423,8 @@ handle_cast(Message, State) ->
     {stop, {unknown_cast, Message}, State}.
 
 
-%% @spec handle_info(Info, State) -> {noreply, State} |
+-spec handle_info(term(), term()) -> {noreply, term()} | {noreply, term(), timeout() | hibernate} | {stop, term(), term()}.
+%% handle_info(Info, State) -> {noreply, State} |
 %%                                       {noreply, State, Timeout} |
 %%                                       {stop, Reason, State}
 %% @doc Handling all non call/cast messages
@@ -384,7 +451,7 @@ handle_info({logger, Data}, #state{ site = Site, log_client_topic = ClientTopic 
 handle_info(_Info, State) ->
     {noreply, State}.
 
-%% @spec terminate(Reason, State) -> void()
+-spec terminate(term(), term()) -> ok.
 %% @doc This function is called by a gen_server when it is about to
 %% terminate. It should be the opposite of Module:init/1 and do any necessary
 %% cleaning up. When it returns, the gen_server terminates with Reason.
@@ -393,7 +460,7 @@ terminate(_Reason, _State) ->
     ok.
 
 
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
+-spec code_change(term(), term(), term()) -> {ok, term()}.
 %% @doc Convert process state when code is changed
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -538,6 +605,10 @@ handle_other_log(Record, State) ->
 flatten(Fields) ->
      lists:map( fun flatten_prop/1, Fields ).
 
+flatten_prop({message_nr, MessageNr}) when is_binary(MessageNr) ->
+    {message_nr, z_string:truncatechars(MessageNr, 32, <<>>)};
+flatten_prop({envelop_from, undefined}) ->
+    {envelop_from, <<>>};
 flatten_prop({_, undefined} = Prop) ->
     Prop;
 flatten_prop({_, V} = Prop) when is_binary(V); is_list(V); is_number(V); is_boolean(V); is_atom(V) ->
@@ -596,4 +667,3 @@ to_list(V) ->
 
 opt_user(undefined) -> [];
 opt_user(Id) -> [" (", integer_to_list(Id), ")"].
-

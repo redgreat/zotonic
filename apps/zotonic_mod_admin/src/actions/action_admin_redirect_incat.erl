@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2020 Marc Worrell
 %% @doc redirect to the next or previous resource in a category
+%% @end
 
 %% Copyright 2020 Marc Worrell
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(action_admin_redirect_incat).
+-moduledoc("
+Todo
+
+Not yet documented.
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 %% interface functions

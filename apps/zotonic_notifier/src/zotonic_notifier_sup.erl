@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2017 Marc Worrell
 %% @doc Supervisor for the notifier
+%% @end
 
 %% Copyright 2017 Marc Worrell
 %%
@@ -28,7 +29,7 @@
     init/1
 ]).
 
--include("zotonic_notifier.hrl").
+-include("../include/zotonic_notifier.hrl").
 
 %% @doc API for starting the site supervisor.
 start_link() ->

@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2013 Marc Worrell
+%% @copyright 2013-2026 Marc Worrell
 %% @doc Check if there is a 'stop' question in list of (survey) blocks
+%% @end
 
-%% Copyright 2013 Marc Worrell
+%% Copyright 2013-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,15 @@
 %% limitations under the License.
 
 -module(filter_survey_is_stop).
+-moduledoc("
+Check if there is a ‘stop’ question in list of (survey) blocks
+
+See [mod_survey](/id/doc_module_mod_survey)
+
+Todo
+
+Not yet documented.
+").
 
 -export([
     survey_is_stop/2
@@ -25,5 +35,6 @@
 survey_is_stop(Qs, _Context) ->
 	lists:any(fun is_stop/1, Qs).
 
-is_stop(Blk) ->
-	maps:get(<<"type">>, Blk, undefined) =:= <<"survey_stop">>.
+is_stop(#{ <<"type">> := <<"survey_stop">> }) -> true;
+is_stop(#{ <<"type">> := <<"survey_page_options">>, <<"is_stop_page">> := true }) -> true;
+is_stop(_) -> false.

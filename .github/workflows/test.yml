@@ -18,8 +18,7 @@ jobs:
 
     strategy:
       matrix:
-        # 27 can be added if a new qdate package has been released
-        otp_version: [25, 26, 27]
+        otp_version: [26, 27, 28]
         os: [ubuntu-latest]
 
     container:
@@ -58,3 +57,5 @@ jobs:
           sudo -u zotonic bash -c "ZOTONIC_DBHOST=postgres bin/zotonic runtests"
       - name: XRef
         run: make xref
+      - name: edocs
+        run: make edocs

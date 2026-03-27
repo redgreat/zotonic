@@ -2,6 +2,7 @@
 %% @copyright 2016-2021 Marc Worrell <marc@worrell.nl>
 
 %% @doc Extract EXIF information from the medium record to resource properties
+%% @end
 
 %% Copyright 2016-2021 Marc Worrell
 %%
@@ -18,6 +19,24 @@
 %% limitations under the License.
 
 -module(mod_media_exif).
+-moduledoc("
+When uploading a file, this module extracts properties from the uploaded media and sets them in the resource.
+
+Properties extracted from the uploaded file are:
+
+*   GPS location
+*   Crop center (derived from the focusing area)
+*   Orientation
+*   Date (start, end and original publication date)
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_media_upload_rsc_props`: Extract EXIF metadata fields and add them to resource properties on media upload.
+
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("EXIF Photos").

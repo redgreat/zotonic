@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2024 Marc Worrell
-%% @doc Interface to database, uses database definition from Context
+%% @copyright 2009-2025 Marc Worrell
+%% @doc Interface to database, uses database definition from Context.
 %% @end
 
-%% Copyright 2009-2024 Marc Worrell
+%% Copyright 2009-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@
 -author("Arjan Scherpenisse <arjan@scherpenisse.net>").
 
 -define(TIMEOUT, 30000).
+-define(IS_PROPS_COL(Col), (Col =:= <<"props">> orelse Col =:= <<"props_json">>)).
+-define(IS_EMPTY(V), (V =:= undefined orelse V =:= <<>>)).
 
 %% interface functions
 -export([
@@ -100,25 +102,27 @@
     update_sequence/3,
     prepare_database/1,
     constraint_exists/3,
+    function_exists/2,
+    foreign_keys/2,
+    foreign_key/3,
     key_exists/3,
     table_exists/2,
+    table_keys/2,
     create_table/3,
+    alter_table/3,
     drop_table/2,
     flush/1,
 
     assert_table_name/1,
     quoted_table_name/1,
     prepare_cols/2,
+    merge_props/1,
 
     ensure_database/2,
     ensure_schema/2,
     schema_exists_conn/2,
     drop_schema/1
 ]).
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
 
 -type database_server() :: postgresql.
 
@@ -127,7 +131,7 @@
 -type query_timeout() :: integer().
 
 -type transaction_fun() :: fun((z:context()) -> term()).
--type table_name() :: atom() | string() | binary().
+-type table_name() :: atom() | nonempty_string() | nonempty_binary().
 -type column_name() :: atom() | string() | binary().
 -type schema_name() :: default | atom() | string() | binary().
 -type parameters() :: list( parameter() ).
@@ -248,17 +252,14 @@ transaction1(Function, #context{dbc=undefined} = Context) ->
                                 DbDriver:squery(C, "ROLLBACK", ?TIMEOUT),
                                 R;
                             R ->
-                                case DbDriver:is_connection_alive(C) of
-                                    true ->
-                                        case DbDriver:squery(C, "COMMIT", ?TIMEOUT) of
-                                            {ok, [], []} -> ok;
-                                            {error, _} = ErrorCommit ->
-                                                z_notifier:notify_queue_flush(Context),
-                                                throw(ErrorCommit)
-                                        end,
+                                case DbDriver:squery(C, "COMMIT", ?TIMEOUT) of
+                                    {ok, [], []} ->
                                         R;
-                                    false ->
-                                        {rollback, {error, connection_down}}
+                                    {error, connection_down} ->
+                                        {rollback, {error, connection_down}};
+                                    {error, _} = ErrorCommit ->
+                                        z_notifier:notify_queue_flush(Context),
+                                        throw(ErrorCommit)
                                 end
                         end
                     catch
@@ -618,37 +619,37 @@ qmap_props(Sql, Args, Options, Context) ->
 
 
 %% @doc Make associative maps from all the rows in the result set.
+cols_map(_Cols, [], _IsMergeProps, _Keys) -> [];
 cols_map(Cols, Rows, IsMergeProps, Keys) ->
-    ColNames = [ Name || #column{ name = Name } <- Cols ],
-    ColNames1 = case Keys of
-        atom -> [ binary_to_atom(K, utf8) || K <- ColNames ];
-        binary -> ColNames
+    ColProps = build_col_props(Cols, Keys, IsMergeProps),
+    [ map_row(ColProps, Row) || Row <- Rows ].
+
+map_row(ColProps, Row) ->
+    lists:foldl(
+      fun({Nr, Col, NeedsMap}, Acc) ->
+              Val = erlang:element(Nr, Row),
+              map_cell(Col, NeedsMap, Val, Acc)
+      end,
+      #{},
+      ColProps).
+
+map_cell(_Col, true, Cell, Acc) ->
+    map_merge_props(Cell, Acc);
+map_cell(Col, false, Cell, Acc) ->
+    maps:put(Col, Cell, Acc).
+
+build_col_props(Cols, Keys, IsMergeProps) ->
+    build_col_props(Cols, Keys, IsMergeProps, 1, []).
+
+build_col_props([], _Keys, _IsMergeProps, _N, Acc) ->
+    lists:reverse(Acc);
+build_col_props([#column{ name = Name } | Rest], Keys, IsMergeProps, N, Acc) ->
+    Name1 = case Keys of
+        atom -> binary_to_atom(Name, utf8);
+        binary -> Name
     end,
-    ColIndices = lists:zip( lists:seq(1, length(ColNames1)), ColNames1 ),
-    lists:map(
-        fun(Row) ->
-            lists:foldl(
-                fun
-                    ({Nr, Col}, Acc) when IsMergeProps and (Col =:= props_json orelse Col =:= <<"props_json">>) ->
-                        JSON = erlang:element(Nr, Row),
-                        case is_binary(JSON) of
-                            true ->
-                                map_merge_props(jsxrecord:decode(JSON), Acc);
-                            false ->
-                                Acc
-                        end;
-
-                    ({Nr, Col}, Acc) when IsMergeProps and (Col =:= props orelse Col =:= <<"props">>) ->
-                        Props = erlang:element(Nr, Row),
-                        map_merge_props(Props, Acc);
-
-                    ({Nr, Col}, Acc) ->
-                        Acc#{ Col => erlang:element(Nr, Row) }
-                end,
-                #{},
-                ColIndices)
-        end,
-        Rows).
+    NeedsMerge = IsMergeProps andalso ?IS_PROPS_COL(Name),
+    build_col_props(Rest, Keys, IsMergeProps, N + 1, [{N, Name1, NeedsMerge} | Acc]).
 
 map_merge_props(M, Acc) when is_map(M) ->
     maps:merge(M, Acc);
@@ -667,7 +668,7 @@ map_merge_props(_, Acc) ->
 -spec q(SQL, Context) -> Result when
     SQL :: sql(),
     Context :: z:context(),
-    Result :: list() | integer().
+    Result :: list() | non_neg_integer().
 q(Sql, Context) ->
     q(Sql, [], Context, ?TIMEOUT).
 
@@ -683,7 +684,7 @@ q(Sql, Context) ->
         SQL :: sql(),
         Context :: z:context(),
         Timeout :: pos_integer(),
-        Result :: list() | integer().
+        Result :: list() | non_neg_integer().
 q(Sql, Parameters, #context{} = Context) ->
     q(Sql, Parameters, Context, ?TIMEOUT);
 q(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
@@ -697,7 +698,7 @@ q(Sql, #context{} = Context, Timeout) when is_integer(Timeout) ->
     Parameters :: parameters(),
     Context :: z:context(),
     Timeout :: pos_integer(),
-    Result :: list() | integer().
+    Result :: list() | non_neg_integer().
 q(Sql, Parameters, Context, Timeout) ->
     F = fun
         (none) -> [];
@@ -870,20 +871,24 @@ equery(Sql, Parameters, Context, Timeout) ->
 
 %% @doc Execute the same SQL statement for a list of parameters. Default timeout
 %% of 30 seconds.
--spec execute_batch(SQL, ParametersList, Context) -> query_result() when
+-spec execute_batch(SQL, ParametersList, Context) -> Result when
     SQL :: sql(),
     ParametersList :: list( parameters() ),
-    Context :: z:context().
+    Context :: z:context(),
+    Result :: {ok, [ query_result() ]}
+            | {error, term()}.
 execute_batch(Sql, Batch, Context) ->
     execute_batch(Sql, Batch, Context, ?TIMEOUT).
 
 
 %% @doc Execute the same SQL statement for a list of parameters.
--spec execute_batch(SQL, ParametersList, Context, Timeout) -> query_result() when
+-spec execute_batch(SQL, ParametersList, Context, Timeout) -> Result when
     SQL :: sql(),
     ParametersList :: list( parameters() ),
     Context :: z:context(),
-    Timeout :: pos_integer().
+    Timeout :: pos_integer(),
+    Result :: {ok, [ query_result() ]}
+            | {error, term()}.
 execute_batch(Sql, Batch, Context, Timeout) ->
     F = fun(none) ->
                 {error, noresult};
@@ -1370,132 +1375,40 @@ split_props(Props, Cols) ->
     end.
 
 
-%% @doc Return a property list with all columns of the table. (example: [{id,int4,modifier},...])
+%% @doc Return a list of column definitions for all columns of the table.
 -spec columns(table_name(), z:context()) -> list( #column_def{} ).
 columns(Table, Context) ->
-    {Schema, Table1, _QTab} = quoted_table_name(Table),
-    columns(Schema, Table1, Context).
+    z_db_table:columns(Table, Context).
 
+%% @doc Return a property list with all columns of the table. (example: [{id,int4,modifier},...])
 -spec columns(schema_name(), table_name(), z:context()) -> list( #column_def{} ).
-columns(Schema, Table, Context) when is_binary(Table) ->
-    columns(Schema, binary_to_list(Table), Context);
-columns(Schema, Table, Context) when is_atom(Table) ->
-    columns(Schema, atom_to_list(Table), Context);
-columns(Schema, Table, Context) when is_list(Table) ->
-    assert_table_name(Table),
-    Options = z_db_pool:get_database_options(Context),
-    Db = proplists:get_value(dbdatabase, Options),
-    Schema1 = case Schema of
-        default -> proplists:get_value(dbschema, Options);
-        S when is_list(S) -> S;
-        S when is_binary(S) -> S
-    end,
-    case z_depcache:get({columns, Db, Schema1, Table}, Context) of
-        {ok, Cols} ->
-            Cols;
-        _ ->
-            Cols = q("  select column_name, data_type, character_maximum_length,
-                               is_nullable, column_default, udt_name
-                        from information_schema.columns
-                        where table_catalog = $1
-                          and table_schema = $2
-                          and table_name = $3
-                        order by ordinal_position", [Db, Schema1, Table], Context),
-            Cols1 = [ columns1(Col) || Col <- Cols ],
-            z_depcache:set({columns, Db, Schema1, Table}, Cols1, ?YEAR, [{database, Db}], Context),
-            Cols1
-    end.
+columns(Schema, Table, Context) ->
+    z_db_table:columns(Schema, Table, Context).
 
-
-columns1({<<"id">>, <<"integer">>, undefined, Nullable, <<"nextval(", _/binary>>, _UdtName}) ->
-    #column_def{
-        name = id,
-        type = "serial",
-        length = undefined,
-        is_nullable = z_convert:to_bool(Nullable),
-        default = undefined
-    };
-columns1({Name, <<"ARRAY">>, _MaxLength, Nullable, Default, UdtName}) ->
-    % @todo derive the type of the array elements.
-    #column_def{
-        name = z_convert:to_atom(Name),
-        type = case UdtName of
-            <<"_text">> -> "text";
-            <<"_varchar">> -> "character varying";
-            <<"_int", _/binary>> -> "integer";
-            _ -> UdtName
-        end,
-        length = undefined,
-        is_array = true,
-        is_nullable = z_convert:to_bool(Nullable),
-        default = column_default(Default)
-    };
-columns1({Name,Type,MaxLength,Nullable,Default,_UdtName}) ->
-    #column_def{
-        name = z_convert:to_atom(Name),
-        type = z_convert:to_list(Type),
-        length = MaxLength,
-        is_nullable = z_convert:to_bool(Nullable),
-        default = column_default(Default)
-    }.
-
-column_default(undefined) -> undefined;
-column_default(<<"nextval(", _/binary>>) -> undefined;
-column_default(Default) -> binary_to_list(Default).
-
-
+%% @doc Return the column definition of the given column.
 -spec column( table_name(), column_name(), z:context()) ->
         {ok, #column_def{}} | {error, enoent}.
 column(Table, Column, Context) ->
-    {Schema, Table1, _QTab} = quoted_table_name(Table),
-    column(Schema, Table1, Column, Context).
+    z_db_table:column(Table, Column, Context).
 
--spec column( schema_name(), table_name(), column_name(), z:context()) ->
-        {ok, #column_def{}} | {error, enoent}.
-column(Schema, Table, Column0, Context) ->
-    Columns = columns(Schema, Table, Context),
-    Column = to_existing_atom(Column0),
-    case lists:filter(
-        fun
-            (#column_def{ name = Name }) when Name =:= Column -> true;
-            (_) -> false
-        end,
-        Columns)
-    of
-        [] -> {error, enoent};
-        [ #column_def{} = Col ] -> {ok, Col}
-    end.
-
-to_existing_atom(C) ->
-    try
-        to_existing_atom_1(C)
-    catch
-        error:badarg ->
-            'ERROR'
-    end.
-
-to_existing_atom_1(C) when is_binary(C) ->
-    binary_to_existing_atom(C, utf8);
-to_existing_atom_1(C) when is_list(C) ->
-    list_to_existing_atom(C);
-to_existing_atom_1(C) when is_atom(C) ->
-    C.
-
-%% @doc Return a list with the column names of a table.  The names are sorted.
+%% @doc Return a list with the column (atom) names of a table.  The names are sorted.
 -spec column_names(table_name(), z:context()) -> list( atom() ).
 column_names(Table, Context) ->
     {Schema, Table1, _QTab} = quoted_table_name(Table),
     column_names(Schema, Table1, Context).
 
+%% @doc Return a list with all (atom) columns names of a table.  The names are sorted.
 -spec column_names(schema_name(), table_name(), z:context()) -> list( atom() ).
 column_names(Schema, Table, Context) ->
-    Names = [ C#column_def.name || C <- columns(Schema, Table, Context)],
+    Names = [ C#column_def.name || C <- z_db_table:columns(Schema, Table, Context)],
     lists:sort(Names).
 
+%% @doc Return a list with all (binary) columns names of a table.  The names are not sorted.
 -spec column_names_bin(table_name(), z:context()) -> list( binary() ).
 column_names_bin(Table, Context) ->
     [ atom_to_binary(Col, utf8) || Col <- column_names(Table, Context) ].
 
+%% @doc Return a list with all (binary) columns names of a table.  The names are not sorted.
 -spec column_names_bin(schema_name(), table_name(), z:context()) -> list( binary() ).
 column_names_bin(Schema, Table, Context) ->
     [ atom_to_binary(Col, utf8) || Col <- column_names(Schema, Table, Context) ].
@@ -1513,9 +1426,16 @@ column_exists(Table, Column, Context) when is_atom(Column) ->
 -spec to_column_value(table_name(), column_name(), term(), z:context()) -> {ok, term()} | {error, term()}.
 to_column_value(Table, Column, Value, Context) ->
     case column(Table, Column, Context) of
-        {ok, #column_def{ type = Type, length = Length }} ->
+        {ok, #column_def{ type = Type, length = Length, is_array = false }} ->
             try
                 {ok, convert_value(Type, Length, Value)}
+            catch
+                _:Reason ->
+                    {error, Reason}
+            end;
+        {ok, #column_def{ type = Type, length = Length, is_array = true }} ->
+            try
+                {ok, convert_array_value(Type, Length, Value)}
             catch
                 _:Reason ->
                     {error, Reason}
@@ -1524,54 +1444,42 @@ to_column_value(Table, Column, Value, Context) ->
             Error
     end.
 
-convert_value("text", _, V) ->
-    z_convert:to_binary(V);
-convert_value("character varying", Len, V) ->
-    V1 = z_convert:to_binary(V),
-    z_string:truncatechars(V1, Len);
-convert_value("integer", _, V) ->
-    z_convert:to_integer(V);
-convert_value("bigint", _, V) ->
-    z_convert:to_integer(V);
-convert_value("smallint", _, V) ->
-    z_convert:to_integer(V);
-convert_value("serial", _, V) ->
-    z_convert:to_integer(V);
-convert_value("bigserial", _, V) ->
-    z_convert:to_integer(V);
-convert_value("smallserial", _, V) ->
-    z_convert:to_integer(V);
-convert_value("numeric", _, V) ->
-    z_convert:to_float(V);
-convert_value("decimal", _, V) ->
-    z_convert:to_float(V);
-convert_value("float", _, V) ->
-    z_convert:to_float(V);
-convert_value("double", _, V) ->
-    z_convert:to_float(V);
-convert_value("boolean", _, V) ->
-    z_convert:to_bool_strict(V);
-convert_value("timestamp" ++ _, _, V) ->
-    z_datetime:to_datetime(V);
-convert_value("datetime" ++ _, _, V) ->
-    z_datetime:to_datetime(V);
-convert_value("date" ++ _, _, V) ->
-    z_datetime:to_datetime(V);
-convert_value("bytea", _, V) ->
-    ?DB_PROPS(V);
-convert_value("tsvector", _, V) ->
-    z_convert:to_binary(V);
-convert_value("ARRAY", _, V) when is_list(V) ->
-    V;
-convert_value("ARRAY", _, V) ->
-    [ V ];
-convert_value(Type, _, V) ->
+convert_value(<<"text">>, _, V) -> z_convert:to_binary(V);
+convert_value(<<"character varying">>, Len, V) -> V1 = z_convert:to_binary(V), z_string:truncatechars(V1, Len);
+convert_value(<<"integer">>, _, V) -> z_convert:to_integer(V);
+convert_value(<<"bigint">>, _, V) -> z_convert:to_integer(V);
+convert_value(<<"smallint">>, _, V) -> z_convert:to_integer(V);
+convert_value(<<"serial">>, _, V) -> z_convert:to_integer(V);
+convert_value(<<"bigserial">>, _, V) -> z_convert:to_integer(V);
+convert_value(<<"smallserial">>, _, V) -> z_convert:to_integer(V);
+convert_value(<<"numeric">>, _, V) -> z_convert:to_float(V);
+convert_value(<<"decimal">>, _, V) -> z_convert:to_float(V);
+convert_value(<<"float">>, _, V) -> z_convert:to_float(V);
+convert_value(<<"double">>, _, V) -> z_convert:to_float(V);
+convert_value(<<"boolean">>, _, V) -> z_convert:to_bool_strict(V);
+convert_value(<<"timestamp", _/binary>>, _, V) -> z_datetime:to_datetime(V);
+convert_value(<<"datetime", _/binary>>, _, V) -> z_datetime:to_datetime(V);
+convert_value(<<"date", _/binary>>, _, V) -> z_datetime:to_datetime(V);
+convert_value(<<"bytea">>, _, V) -> ?DB_PROPS(V);
+convert_value(<<"tsvector">>, _, V) -> z_convert:to_binary(V);
+convert_value(<<"ARRAY">>, _, V) when is_list(V) -> V;
+convert_value(<<"ARRAY">>, _, V) -> [ V ];
+convert_value(<<"array">>, _, V) when is_list(V) -> V;
+convert_value(<<"array">>, _, V) -> [ V ];
+convert_value(Type, _, V) when is_binary(Type) ->
     ?LOG_WARNING(#{
+        in => zotonic_core,
         text => <<"No type conversion for column type">>,
+        result => error,
         type => Type,
         value => V
     }),
     V.
+
+convert_array_value(Type, Length, V) when is_list(V) ->
+    [ convert_value(Type, Length, E) || E <- V ];
+convert_array_value(Type, Length, V) ->
+    [ convert_value(Type, Length, V) ].
 
 
 %% @doc Flush all cached information about the database.
@@ -1713,15 +1621,7 @@ drop_schema(Options) when is_list(Options) ->
     end.
 
 open_connection(DatabaseName, Options) ->
-    epgsql:connect(
-        proplists:get_value(dbhost, Options),
-        proplists:get_value(dbuser, Options),
-        proplists:get_value(dbpassword, Options),
-        [
-            {port, proplists:get_value(dbport, Options)},
-            {database, DatabaseName}
-        ]
-    ).
+    epgsql:connect(z_db_pgsql:build_connect_options(DatabaseName, Options)).
 
 close_connection(Connection) ->
     epgsql:close(Connection).
@@ -1744,7 +1644,7 @@ database_exists(Connection, Database) ->
 create_database(_Site, Connection, Database) ->
     %% Use template0 to prevent ERROR: new encoding (UTF8) is incompatible with
     %% the encoding of the template database (SQL_ASCII)
-    assert_database_name(Database),
+    z_db_table:assert_database_name(Database),
     case epgsql:equery(
         Connection,
         "CREATE DATABASE \"" ++ Database ++ "\" ENCODING = 'UTF8' TEMPLATE template0"
@@ -1772,7 +1672,7 @@ schema_exists_conn(Connection, Schema) ->
 %% @doc Create a schema
 -spec create_schema(atom(), epgsql:connection(), string()) -> ok | {error, term()}.
 create_schema(_Site, Connection, Schema) ->
-    assert_schema_name(Schema),
+    z_db_table:assert_schema_name(Schema),
     case epgsql:equery(
         Connection,
         "CREATE SCHEMA \"" ++ Schema ++ "\""
@@ -1798,7 +1698,11 @@ create_schema(_Site, Connection, Schema) ->
     end.
 
 
--spec constraint_exists( table_name(), binary() | string() | atom(), z:context() ) -> boolean().
+%% @doc Check if a named constraint exists on a table.
+-spec constraint_exists(Table, Constraint, Context) -> boolean() when
+    Table :: table_name(),
+    Constraint :: binary() | string() | atom(),
+    Context :: z:context().
 constraint_exists(Table, Constraint, Context) ->
     Options = z_db_pool:get_database_options(Context),
     Db = proplists:get_value(dbdatabase, Options),
@@ -1815,6 +1719,92 @@ constraint_exists(Table, Constraint, Context) ->
     HasConstraint >= 1.
 
 
+%% @doc Check if a function is defined in the current schema.
+-spec function_exists( FunctionName, Context) -> boolean() when
+    FunctionName :: binary() | string() | atom(),
+    Context :: z:context().
+function_exists(Function, Context) ->
+    Options = z_db_pool:get_database_options(Context),
+    Schema = proplists:get_value(dbschema, Options),
+    HasFunction = z_db:q1("
+        select count(*)
+        from pg_proc p
+        join pg_namespace n
+          on p.pronamespace = n.oid
+        where n.nspname = $1
+          and p.proname = $2",
+        [Schema, z_convert:to_binary(Function)],
+        Context),
+    HasFunction =:= 1.
+
+
+%% @doc Return a list with all foreign keys on a table.
+-spec foreign_keys( table_name(), z:context() ) -> {ok, [ map() ]} | {error, Reason} when
+    Reason :: enoent | term().
+foreign_keys(Table, Context) ->
+    Options = z_db_pool:get_database_options(Context),
+    Db = proplists:get_value(dbdatabase, Options),
+    Schema = proplists:get_value(dbschema, Options),
+    z_db:qmap("
+        SELECT
+            tc.table_schema,
+            tc.constraint_name,
+            tc.table_name,
+            kcu.column_name,
+            ccu.table_schema AS foreign_table_schema,
+            ccu.table_name AS foreign_table_name,
+            ccu.column_name AS foreign_column_name
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_catalog = kcu.table_catalog
+            AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage AS ccu
+            ON ccu.constraint_name = tc.constraint_name
+            AND ccu.table_catalog = tc.table_catalog
+            AND ccu.table_schema = tc.table_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND tc.constraint_catalog = $1
+          AND tc.table_schema = $2
+          AND tc.table_name = $3",
+        [Db, Schema, Table],
+        [ {keys, atom} ],
+        Context).
+
+-spec foreign_key( table_name(), Name, z:context() ) -> {ok, map()} | {error, Reason} when
+    Name :: atom() | string() | binary(),
+    Reason :: enoent | term().
+foreign_key(Table, Name, Context) ->
+    Options = z_db_pool:get_database_options(Context),
+    Db = proplists:get_value(dbdatabase, Options),
+    Schema = proplists:get_value(dbschema, Options),
+    z_db:qmap_row("
+        SELECT
+            tc.table_schema,
+            tc.constraint_name,
+            tc.table_name,
+            kcu.column_name,
+            ccu.table_schema AS foreign_table_schema,
+            ccu.table_name AS foreign_table_name,
+            ccu.column_name AS foreign_column_name
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_catalog = kcu.table_catalog
+            AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage AS ccu
+            ON ccu.constraint_name = tc.constraint_name
+            AND ccu.table_catalog = tc.table_catalog
+            AND ccu.table_schema = tc.table_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND tc.constraint_catalog = $1
+          AND tc.table_schema = $2
+          AND tc.table_name = $3
+          AND tc.constraint_name = $4",
+        [Db, Schema, Table, Name],
+        [ {keys, atom} ],
+        Context).
+
 -spec key_exists( table_name(), binary() | string() | atom(), z:context() ) -> boolean().
 key_exists(Table, Key, Context) ->
     Options = z_db_pool:get_database_options(Context),
@@ -1829,191 +1819,110 @@ key_exists(Table, Key, Context) ->
         Context),
     HasKey >= 1.
 
+%% @doc Return a map of all indices of a table. The key is the name of
+%% the index, the value is the definition of the index.
+-spec table_keys( table_name(), z:context() ) -> {ok, Indices} when
+    Indices :: #{ IndexName := IndexDef },
+    IndexName :: binary(),
+    IndexDef :: binary().
+table_keys(Table, Context) ->
+    Options = z_db_pool:get_database_options(Context),
+    Schema = proplists:get_value(dbschema, Options),
+    Rs = z_db:q("
+        select indexname, indexdef
+        from pg_indexes
+        where schemaname = $1
+          and tablename = $2",
+        [ Schema, Table ],
+        Context),
+    Map = lists:foldl(
+        fun({N, D}, Acc) ->
+            Acc#{ N => D }
+        end,
+        #{},
+        Rs),
+    {ok, Map}.
 
 %% @doc Check the information schema if a certain table exists in the context database.
 -spec table_exists(table_name(), z:context()) -> boolean().
 table_exists(Table, Context) ->
-    {Schema, Tab, _QTab} = quoted_table_name(Table),
-    table_exists(Schema, Tab, Context).
+    z_db_table:table_exists(Table, Context).
 
--spec table_exists( schema_name(), table_name(), z:context() ) -> boolean().
-table_exists(Schema, Table, Context) ->
-    Options = z_db_pool:get_database_options(Context),
-    Db = proplists:get_value(dbdatabase, Options),
-    Schema1 = case Schema of
-        default -> proplists:get_value(dbschema, Options);
-        S -> S
-    end,
-    case q1("   select count(*)
-                from information_schema.tables
-                where table_catalog = $1
-                  and table_name = $2
-                  and table_schema = $3
-                  and table_type = 'BASE TABLE'", [Db, Table, Schema1], Context) of
-        1 -> true;
-        0 -> false
-    end.
+%% @doc Ensure that a table with the given columns exists, if the table exists then
+%% add, modify or drop columns.  The 'id' (with type serial) column _must_ be defined
+%% when creating the table.
+-spec create_table(Table, Columns, Context) -> ok | {error, Reason} when
+    Table :: table_name(),
+    Columns :: list( #column_def{} ),
+    Context :: z:context(),
+    Reason :: term().
+create_table(Table, Cols, Context) ->
+    z_db_table:create_table(Table, Cols, Context).
 
+%% @doc Alter a table so that it matches the given column definitions. If the table doesn't
+%% exist then it is created. RESTRICTIONS: does NOT change the primary key and unique
+%% constraint of existing columns. If the table doesn't exist then it is created.
+%% Be careful when adding columns that are not nullable, if the table contains data then
+%% adding those columns will fail.
+-spec alter_table(Table, Columns, Context) -> ok | {error, Reason} when
+    Table :: table_name(),
+    Columns :: list( #column_def{} ),
+    Context :: z:context(),
+    Reason :: term().
+alter_table(Table, Cols, Context) ->
+    z_db_table:alter_table(Table, Cols, Context).
 
-%% @doc Make sure that a table is dropped, only when the table exists
+%% @doc Make sure that a table is dropped, only if the table exists
 -spec drop_table(table_name(), z:context()) -> ok.
 drop_table(Table, Context) ->
-    {_Schema, _Tab, QTab} = quoted_table_name(Table),
-    case table_exists(Table, Context) of
-        true -> q("drop table " ++ QTab, Context), ok;
-        false -> ok
-    end.
+    z_db_table:drop_table(Table, Context).
 
+%% @doc Assert that the table name is safe to use. Crashes if the table name is not safe.
+-spec assert_table_name(table_name()) -> true.
+assert_table_name(Table) ->
+    z_db_table:assert_table_name(Table).
 
-%% @doc Ensure that a table with the given columns exists, alter any existing table
-%% to add, modify or drop columns.  The 'id' (with type serial) column _must_ be defined
-%% when creating the table.
--spec create_table(table_name(), list(), z:context()) -> ok.
-create_table(Table, Cols, Context) ->
-    {_Schema, _Tab, QTab} = quoted_table_name(Table),
-    ColsSQL = ensure_table_create_cols(Cols, []),
-    z_db:q("CREATE TABLE "++QTab++" ("++string:join(ColsSQL, ",")
-        ++ table_create_primary_key(Cols) ++ ")", Context),
-    ok.
+%% @doc Quote a table name so that it is safe to use in SQL queries.
+-spec quoted_table_name(table_name()) -> {default | string(), string(), string()}.
+quoted_table_name(Table) ->
+    z_db_table:quoted_table_name(Table).
 
-
-table_create_primary_key([]) -> [];
-table_create_primary_key([#column_def{name=id, type="serial"}|_]) -> ", primary key(id)";
-table_create_primary_key([#column_def{name=N, primary_key=true}|_]) -> ", primary key(" ++ z_convert:to_list(N) ++ ")";
-table_create_primary_key([_|Cols]) -> table_create_primary_key(Cols).
-
-ensure_table_create_cols([], Acc) ->
-    lists:reverse(Acc);
-ensure_table_create_cols([C|Cols], Acc) ->
-    M = lists:flatten([$", atom_to_list(C#column_def.name), $", 32, column_spec(C)]),
-    ensure_table_create_cols(Cols, [M|Acc]).
-
-column_spec(#column_def{type=Type, length=Length, is_nullable=Nullable, is_array = IsArray, default=Default, unique=Unique}) ->
-    L = case Length of
-            undefined -> [];
-            _ -> [$(, integer_to_list(Length), $)]
-        end,
-    A = column_spec_array(IsArray),
-    N = column_spec_nullable(Nullable),
-    D = column_spec_default(Default),
-    U = column_spec_unique(Unique),
-    lists:flatten([Type, L, A, N, D, U]).
-
-column_spec_array(true) -> "[]";
-column_spec_array(false) -> "".
-
-column_spec_nullable(true) -> "";
-column_spec_nullable(false) -> " not null".
-
-column_spec_default(undefined) -> "";
-column_spec_default(Default) -> [" DEFAULT ", Default].
-
-column_spec_unique(false) -> "";
-column_spec_unique(true) -> " UNIQUE".
-
-%% @doc Check if a name is a valid SQL table name. Crashes when invalid
--spec assert_table_name( table_name() ) -> true.
-assert_table_name(A) when is_atom(A) ->
-    assert_table_name1(atom_to_list(A));
-assert_table_name([ C | _ ] = Table) when C =/= $. ->
-    assert_table_name1(Table);
-assert_table_name(<< C,  _/binary>> = Table) when C =/= $. ->
-    assert_table_name1b(Table).
-
-assert_table_name1([]) -> true;
-assert_table_name1([$_|T]) -> assert_table_name1(T);
-assert_table_name1([$.|T]) -> assert_table_name1(T);
-assert_table_name1([H|T]) when (H >= $a andalso H =< $z) ->
-    assert_table_name1(T);
-assert_table_name1([H|T]) when (H >= $0 andalso H =< $9) ->
-    assert_table_name1(T).
-
-assert_table_name1b(<<>>) -> true;
-assert_table_name1b(<<$_, T/binary>>) -> assert_table_name1b(T);
-assert_table_name1b(<<$., T/binary>>) -> assert_table_name1b(T);
-assert_table_name1b(<<H, T/binary>>) when (H >= $a andalso H =< $z) ->
-    assert_table_name1b(T);
-assert_table_name1b(<<H, T/binary>>) when (H >= $0 andalso H =< $9) ->
-    assert_table_name1b(T).
-
-%% @doc Check if a name is a valid SQL database name. Crashes when invalid
--spec assert_database_name( string() ) -> true.
-assert_database_name([]) -> true;
-assert_database_name([$.|T]) -> assert_database_name(T);
-assert_database_name([$_|T]) -> assert_database_name(T);
-assert_database_name([H|T]) when (H >= $a andalso H =< $z) ->
-    assert_database_name(T);
-assert_database_name([H|T]) when (H >= $0 andalso H =< $9) ->
-    assert_database_name(T).
-
-%% @doc Check if a name is a valid SQL schema name. Crashes when invalid
--spec assert_schema_name( string() ) -> true.
-assert_schema_name([]) -> true;
-assert_schema_name([$_|T]) -> assert_schema_name(T);
-assert_schema_name([H|T]) when (H >= $a andalso H =< $z) ->
-    assert_schema_name(T);
-assert_schema_name([H|T]) when (H >= $0 andalso H =< $9) ->
-    assert_schema_name(T).
-
-
--spec quoted_table_name( table_name() ) -> {default | string(), string(), string()}.
-quoted_table_name(TableName) ->
-    assert_table_name(TableName),
-    case binary:split(z_convert:to_binary(TableName), <<".">>, [ global ]) of
-        [ Schema, Table ] ->
-            QTab = binary_to_list(
-                iolist_to_binary([
-                    $", Schema, $", $., $", Table, $"
-                ])),
-            {binary_to_list(Schema), binary_to_list(Table), QTab};
-        [ Table ] ->
-            QTab = binary_to_list(
-                iolist_to_binary([
-                    $", Table, $"
-                ])),
-            {default, binary_to_list(Table), QTab}
-    end.
 
 %% @doc Merge the contents of the props column into the result rows
--spec merge_props([proplists:proplist() | map()]) -> list() | undefined.
+-spec merge_props([proplists:proplist() | map()]) -> list().
 merge_props(List) ->
     merge_props(List, []).
 
 merge_props([], Acc) ->
     lists:reverse(Acc);
-merge_props([R|Rest], Acc) when is_list(R) ->
+merge_props([R | Rest], Acc) when is_list(R) ->
     case {proplists:get_value(props, R, undefined), proplists:get_value(props_json, R, undefined)} of
-        {Props, PropsJSON} when (Props == undefined orelse Props == <<>>) andalso (PropsJSON == undefined orelse PropsJSON == <<>>)  ->
-            merge_props(Rest, [R|Acc]);
-        {Term, PropsJSON} when PropsJSON == undefined orelse PropsJSON == <<>> ->
+        {Props, PropsJSON} when ?IS_EMPTY(Props) andalso ?IS_EMPTY(PropsJSON) ->
+            merge_props(Rest, [R | Acc]);
+        {Term, PropsJSON} when ?IS_EMPTY(PropsJSON) ->
             case Term of
                 T when is_list(T) ->
-                    merge_props(Rest, [lists:keydelete(props, 1, R)++Term|Acc]);
+                    merge_props(Rest, [lists:keydelete(props, 1, R) ++ T | Acc]);
                 T when is_map(T) ->
-                    T1 = lists:map(fun({K,V}) -> {z_convert:to_atom(K), V} end, maps:to_list(Term)),
-                    merge_props(Rest, [lists:keydelete(props, 1, R)++T1|Acc])
+                    T1 =  map_to_proplist(Term),
+                    merge_props(Rest, [lists:keydelete(props, 1, R) ++ T1 | Acc])
             end;
-        {Term, PropsJSON} when Term == undefined orelse Term == <<>> ->
-            Map = jsxrecord:decode(PropsJSON),
-            T1 = lists:map(fun({K,V}) ->
-                                   {z_convert:to_atom(K), V}
-                           end,
-                           maps:to_list(Map)),
-            merge_props(Rest, [lists:keydelete(props_json, 1, R)++ T1| Acc]);
+        {Term, PropsJSON} when ?IS_EMPTY(Term) ->
+            T1 = map_to_proplist(PropsJSON),
+            merge_props(Rest, [lists:keydelete(props_json, 1, R) ++ T1 | Acc]);
         {Term, PropsJSON} ->
             PropsTerm = case Term of
-                            L when is_list(L) ->
-                                L;
-                            M when is_map(M) ->
-                                lists:map(fun({K,V}) -> {z_convert:to_atom(K), V} end, maps:to_list(Term))
+                            L when is_list(L) -> L;
+                            M when is_map(M) -> map_to_proplist(M)
                         end,
-            PropsJSONTerm = lists:map(fun({K,V}) ->
-                                              {z_convert:to_atom(K), V}
-                                      end, maps:to_list(jsxrecord:decode(PropsJSON))),
+            PropsJSONTerm = map_to_proplist(PropsJSON),
             PropsMerged = z_utils:props_merge(PropsJSONTerm, PropsTerm),
 
             merge_props(Rest, [ lists:keydelete(props_json, 1, lists:keydelete(props, 1, R))  ++ PropsMerged | Acc])
     end.
+
+map_to_proplist(Map) ->
+    lists:map(fun({K,V}) -> {z_convert:to_atom(K), V} end, maps:to_list(Map)).
 
 
 -spec assoc1(atom(), z:context(), sql(), parameters(), pos_integer()) -> {ok, [proplists:proplist()]}.
@@ -2042,195 +1951,3 @@ equery1(DbDriver, C, Sql, Parameters, Timeout) ->
         Other -> Other
     end.
 
-
-%%
-%% Tests
-%%
-
--ifdef(TEST).
-
-prepare_cols_test() ->
-    ?assertEqual({ok, #{}}, prepare_cols([], #{})),
-
-    % Props go to the right place
-    ?assertEqual({ok, #{<<"a">> => <<"a value">>}},
-                 prepare_cols([<<"a">>, <<"b">>], #{<<"a">> => <<"a value">>})),
-    ?assertEqual({ok, #{<<"a">> => <<"a value">>, <<"b">> => <<"b value">>}},
-                 prepare_cols([<<"a">>, <<"b">>], #{<<"a">> => <<"a value">>,
-                                                    <<"b">> => <<"b value">>})),
-
-    % Column is not known
-    ?assertEqual({error, {unknown_column,[<<"c">>]}},
-                 prepare_cols([<<"a">>, <<"b">>], #{<<"a">> => <<"a value">>,
-                                                    <<"c">> => <<"c value">>})),
-
-    % When there is a props column, unknown properties go to that column.
-    ?assertEqual({ok,#{<<"a">> => <<"a value">>,
-                       <<"props">> => #{<<"c">> => <<"c value">>}}},
-                 prepare_cols([<<"a">>, <<"b">>, <<"props">>], #{<<"a">> => <<"a value">>,
-                                                                 <<"c">> => <<"c value">>})),
-
-    % An existing props map will be merged with any new values.
-    ?assertEqual({ok,#{<<"a">> => <<"a value">>,
-                       <<"props">> => #{<<"c">> => <<"c value">>,
-                                        <<"d">> => <<"d value">>}}},
-                 prepare_cols([<<"a">>, <<"b">>, <<"props">>],
-                              #{<<"a">> => <<"a value">>,
-                                <<"c">> => <<"c value">>,
-                                <<"props">> => #{<<"d">> => <<"d value">>}})),
-
-    % When there is a props_json column, unknown properties go to that column.
-    ?assertEqual({ok,#{<<"a">> => <<"a value">>,
-                       <<"props_json">> => #{<<"c">> => <<"c value">>}}},
-                 prepare_cols([<<"a">>, <<"b">>, <<"props">>, <<"props_json">>],
-                              #{<<"a">> => <<"a value">>,
-                                <<"c">> => <<"c value">>})),
-
-    % When there is a props_json column, that gets priority
-    ?assertEqual({ok,#{<<"a">> => <<"a value">>,
-                       <<"props_json">> => #{<<"c">> => <<"c value">>}}},
-                 prepare_cols([<<"a">>, <<"b">>, <<"props">>, <<"props_json">>],
-                              #{<<"a">> => <<"a value">>, <<"c">> => <<"c value">>})),
-    ?assertEqual({ok,#{<<"a">> => <<"a value">>,
-                       <<"props_json">> => #{<<"c">> => <<"c value">>}}},
-                 prepare_cols([<<"a">>, <<"b">>, <<"props_json">>],
-                              #{<<"a">> => <<"a value">>, <<"c">> => <<"c value">>})),
-
-    % existing props and props_json fields are merged
-    ?assertEqual({ok,#{<<"a">> => <<"a value">>,
-                       <<"props_json">> => #{<<"c">> => <<"c value">>,
-                                             <<"e">> => <<"e value">>}}},
-                 prepare_cols([<<"a">>, <<"b">>, <<"props">>, <<"props_json">>],
-                              #{<<"a">> => <<"a value">>,
-                                <<"c">> => <<"c value">>,
-                                <<"props_json">> => #{<<"e">> => <<"e value">>}
-                               })),
-
-
-    ok.
-
-merge_props_test() ->
-    M = merge_props([[{id,1},
-                      {is_visible,true},
-                      {rsc_id,330},
-                      {user_id,undefined},
-                      {email,<<"test@example.com">>},
-                      {name,<<"foo">>},
-                      {keep_informed,false},
-                      {props, undefined},
-                      {created,{{2020,6,25},{10,54,37}}},
-                      {props_json,undefined}],
-                     [{id,2},
-                      {is_visible,true},
-                      {rsc_id,330},
-                      {user_id,undefined},
-                      {email,<<"test@example.com">>},
-                      {name,<<"foo">>},
-                      {keep_informed,false},
-                      {props,#{<<"message">> => <<"test test">>}},
-                      {created,{{2020,6,25},{10,54,37}}},
-                      {props_json,undefined}],
-                     [{id,3},
-                      {is_visible,true},
-                      {rsc_id,330},
-                      {user_id,undefined},
-                      {email,<<"test@example.com">>},
-                      {name,<<"foo">>},
-                      {keep_informed,false},
-                      {props,[{message, <<"test test">>}]},
-                      {created,{{2020,6,25},{10,54,37}}},
-                      {props_json,undefined}],
-                     [{id,4},
-                      {is_visible,true},
-                      {rsc_id,330},
-                      {user_id,undefined},
-                      {email,<<"test@example.com">>},
-                      {name,<<"foo">>},
-                      {keep_informed,false},
-                      {props,undefined},
-                      {created,{{2020,6,25},{10,54,37}}},
-                      {props_json,<<"{\"message\": \"test test\"}">>}],
-                     [{id,5},
-                      {is_visible,true},
-                      {rsc_id,330},
-                      {user_id,undefined},
-                      {email,<<"test@example.com">>},
-                      {name,<<"foo">>},
-                      {keep_informed,false},
-                      {props,#{<<"message">> => <<"test test">>}},
-                      {created,{{2020,6,25},{11,54,55}}},
-                      {props_json,<<"{\"message\": \"123\"}">>}],
-                     [{id,6},
-                      {is_visible,true},
-                      {rsc_id,330},
-                      {user_id,undefined},
-                      {email,<<"test@example.com">>},
-                      {name,<<"foo">>},
-                      {keep_informed,false},
-                      {props, [{message,  <<"test test">>}, {extra, <<"hello">>} ]},
-                      {created,{{2020,6,25},{11,54,55}}},
-                      {props_json,<<"{\"message\": \"123\"}">>}] ]),
-
-    ?assertEqual([[{id,1},
-                   {is_visible,true},
-                   {rsc_id,330},
-                   {user_id,undefined},
-                   {email,<<"test@example.com">>},
-                   {name,<<"foo">>},
-                   {keep_informed,false},
-                   {props,undefined},
-                   {created,{{2020,6,25},{10,54,37}}},
-                   {props_json,undefined}],
-                  [{id,2},
-                   {is_visible,true},
-                   {rsc_id,330},
-                   {user_id,undefined},
-                   {email,<<"test@example.com">>},
-                   {name,<<"foo">>},
-                   {keep_informed,false},
-                   {created,{{2020,6,25},{10,54,37}}},
-                   {props_json,undefined},
-                   {message,<<"test test">>}],
-                  [{id,3},
-                   {is_visible,true},
-                   {rsc_id,330},
-                   {user_id,undefined},
-                   {email,<<"test@example.com">>},
-                   {name,<<"foo">>},
-                   {keep_informed,false},
-                   {created,{{2020,6,25},{10,54,37}}},
-                   {props_json,undefined},
-                   {message,<<"test test">>}],
-                  [{id,4},
-                   {is_visible,true},
-                   {rsc_id,330},
-                   {user_id,undefined},
-                   {email,<<"test@example.com">>},
-                   {name,<<"foo">>},
-                   {keep_informed,false},
-                   {props,undefined},
-                   {created,{{2020,6,25},{10,54,37}}},
-                   {message,<<"test test">>}],
-                  [{id,5},
-                   {is_visible,true},
-                   {rsc_id,330},
-                   {user_id,undefined},
-                   {email,<<"test@example.com">>},
-                   {name,<<"foo">>},
-                   {keep_informed,false},
-                   {created,{{2020,6,25},{11,54,55}}},
-                   {message,<<"123">>}],
-                  [{id,5},
-                   {is_visible,true},
-                   {rsc_id,330},
-                   {user_id,undefined},
-                   {email,<<"test@example.com">>},
-                   {name,<<"foo">>},
-                   {keep_informed,false},
-                   {created,{{2020,6,25},{11,54,55}}},
-                   {extra, <<"hello">>},
-                   {message,<<"123">>}]], M),
-    ok.
-
-
--endif.

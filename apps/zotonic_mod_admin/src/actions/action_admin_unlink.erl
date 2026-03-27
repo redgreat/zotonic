@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009 Marc Worrell
-%% Date: 2009-04-26
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Remove an edge between two resources
+%% @end
 
-%% Copyright 2009 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,50 @@
 %% limitations under the License.
 
 -module(action_admin_unlink).
+-moduledoc("
+Remove an [edge](/id/doc_glossary#term-edge) between two [resources](/id/doc_glossary#term-resource). Used in the admin.
+
+The edge is selected with either:
+
+*   the argument `edge_id`
+*   the arguments `subject_id`, `predicate`, `object_id`
+
+For instance:
+
+
+```django
+{% button
+    text=\"Remove\"
+    class=\"btn\"
+    action={
+        unlink
+        subject_id=id
+        predicate=\"contains\"
+        object_id=other_id
+        action={
+            reload
+        }
+    }
+%}
+```
+
+Other arguments:
+
+*   hide - selector to fade out after unlink
+*   edge_template - passed on to the undo action template
+*   action - actions executed after unlink
+*   undo_action - passed on to the undo action template
+*   undo_message_id - defaults to unlink-undo-message
+
+After update, an undo message is rendered in the undo_message_id target, with the template `_action_unlink_undo.tpl`.
+
+Todo
+
+Extend documentation
+
+See also
+
+[link](/id/doc_template_action_action_link)").
 -author("Marc Worrell <marc@worrell.nl").
 -include_lib("zotonic_core/include/zotonic.hrl").
 
@@ -49,7 +93,7 @@ render_action(TriggerId, TargetId, Args, Context) ->
 
 
 %% @doc Unlink the edge, on success show an undo message in the element with id "undo-message"
-%% @spec event(Event, Context1) -> Context2
+-spec event(term(), z:context()) -> z:context().
 event(#postback{message={unlink, EdgeId, SubjectId, Predicate, ObjectId, UndoMessageId, EdgeTemplate, Action, UndoAction}}, Context) ->
     case z_acl:rsc_linkable(SubjectId, Context) of
         true ->
@@ -71,4 +115,3 @@ event(#postback{message={unlink, EdgeId, SubjectId, Predicate, ObjectId, UndoMes
         false ->
             z_render:growl_error("Sorry, you have no permission to edit this page.", Context)
     end.
-

@@ -1,8 +1,8 @@
-%% @copyright 2015-2023 Arjan Scherpenisse
+%% @copyright 2015-2026 Arjan Scherpenisse
 %% @doc Adds content groups to enable access-control rules on resources.
 %% @end
 
-%% Copyright 2015-2023 Arjan Scherpenisse
+%% Copyright 2015-2026 Arjan Scherpenisse
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,15 +17,352 @@
 %% limitations under the License.
 
 -module(mod_acl_user_groups).
+-moduledoc("
+This module adds rule-based access control.
+
+*   All resources (pages) are put into a content group.
+*   All users are member of zero or more user groups.
+*   Content groups are arranged in a hierarchy.
+*   User groups are arranged in a hierarchy.
+
+ACL rules are defined between user groups and content groups. Each single rule gives some user group one or more
+permissions on some content group.
+
+
+
+Managing user groups
+--------------------
+
+By default, Zotonic has four user groups:
+
+*   anonymous (anonymous visitors of the website)
+*   members (logged in users of the website)
+*   editors (content editors)
+*   managers (manage users)
+
+These user groups are arranged in a hierarchy, so that each group has the permissions its parent plus more. So, the
+permissions of users in the members group include those of anonymous users; and editors have the permissions of both
+anonymous users and members plus more.
+
+To add or remove user groups, go to *Auth > User groups* in the admin.
+
+
+
+### Collaboration groups
+
+Collaboration groups are a special type of user groups. They are most useful when you have groups of users that together
+collaborate on content. All content belongs to the group. Each collaboration group has one or more managers. So if you
+have groups of students working together and being supervised by teachers, you can define them as collaboration groups
+with the teachers as managers.
+
+
+
+Managing content groups
+-----------------------
+
+By default, Zotonic has two content groups:
+
+*   default (all site content)
+*   system content (categories, predicates and user groups)
+
+To add or remove content groups, go to *Structure > Content groups* in the admin. Just like user groups, content groups
+are ordered in a hierarchy. So the permissions that apply to the parent content group also apply to all of its children.
+
+
+
+Defining access rules
+---------------------
+
+You can add ACL rules in two ways:
+
+1.   in the admin web interface at `http://yoursite/admin/acl/rules`
+2.   in your site’s or module’s code; see [Managed rules](#managed-rules) below.
+
+Let’s start by defining rules in the web interface.
+
+
+
+### Content access rules
+
+Each content access control rule grants some user group one or more permissions on some content group. So, for each rule
+you must specify the following properties:
+
+*   User group
+*   Content group
+*   Resource category (or ‘all categories’)
+*   Permissions: ‘view’, ‘insert’, ‘update’, ‘delete’, ‘link’, ‘manage own’.
+
+If you wish to narrow down the rule, you can select a single resource category it applies to. The default is ‘all categories’.
+
+The content group dropdown contains:
+
+*   all your [Managing content groups](#content-groups)
+*   all your [Collaboration groups](#collaboration-groups)
+
+The permissions include simple resource permissions that determine whether users in the group are allowed to view,
+insert, update or delete resources. The ‘link’ permission is about creating outgoing edges from resources in the
+content group to other resources.
+
+Some rules may be greyed out and have a note saying ‘This rule is managed by module …’. These are [Managed
+rules](#managed-rules) that you cannot edit in the web interface.
+
+
+
+### Collaboration group rules
+
+Collaboration rules are special content access rules that apply to content in [collaboration
+groups](#collaboration-groups) only. Each rule applies to all collaboration groups.
+
+
+
+### Allowed media
+
+For each user group it is possible to define:
+
+*   Maximum size of uploaded files
+*   Allowed types of files
+
+In the admin, go to *Auth > Access control rules > File Uploads* tab to edit them.
+
+The file size and allowed types is inherited along the user-group hierarchy. For example, if *Managers* is a specialized
+subgroup of *Editors* then all settings of *Editors* also apply to all *Managers*. Not the other way round.
+
+The file types are entered using the mime type or extension of the allowed files.
+
+The following are allowed types:
+
+*   Any mime type (e.g. `image/png`)
+*   Wildcard mime type (e.g. `image/*` or `*/*`)
+*   A file extension (e.g. `.txt`)
+*   `msoffice` for Microsoft Office files
+*   `openoffice` for Open Office files
+*   `embed` for media imported with `mod_oembed` and `mod_video_embed`
+*   `none`
+
+The default is: `image/*, video/*, audio/*, embed, .pdf, .txt, msoffice, openoffice`
+
+The default mime types can be changed with the `site.acl_mime_allowed` key. The default upload size is 50MB.
+
+If a user group is not allowed to upload any files then enter `none`.
+
+
+
+### Access control on properties
+
+Some private sensitive resource properties are protected by the ACL rules. The *privacy* property defines who can see
+these properties.
+
+The default privacy for category *person* is *collaboration group members*. For other categories the default is *public*.
+
+The privacy property can have the following values:
+
+*   0 public
+*   10 members
+*   20 member of same user group (except default members group)
+*   30 collaboration group members
+*   40 collaboration group managers
+*   50 private
+
+Increments are 10 so that more refined options can be added by custom modules.
+
+The protected properties are:
+
+*   email
+*   phone
+*   phone_mobile
+*   phone_alt
+*   address_street_1
+*   address_street_2
+*   address_postcode
+*   address_city
+*   date_start
+*   date_end
+*   location_lat
+*   location_lng
+*   pivot_location_lat
+*   pivot_location_lng
+*   pivot_geocode
+*   pivot_geocode_qhash
+
+
+
+### Module access rules
+
+Each module access rule grants some user group use permissions on some module. In the admin, go to *Auth > Access
+control rules > Modules* tab to edit them.
+
+
+
+### Deny rules
+
+By default, rules grant some permissions. But sometimes you want to deny some permissions that are granted by another
+rule. For instance, if you have a rule that allows anonymous users to view all content groups, but you have a special
+content group ‘Top secret’ that you want to hide from anonymous users, add a rule to deny access:
+
+| Deny | ACL user group | Content group | Category | Permissions |
+| ---- | -------------- | ------------- | -------- | ----------- |
+| √    | Anonymous      | Top secret    | All      | √ View      |
+
+
+
+Publishing rules
+----------------
+
+When you’re editing rules, they are not effective immediately: you have to publish them first. Click the ‘Publish’
+button to do so.
+
+You can test out your rules before publishing them by clicking the ‘Try rules…’ button.
+
+
+
+Managed rules
+-------------
+
+Above you’ve seen how you can add rules through the web interface. Using [module
+versioning](/id/doc_developerguide_modules#guide-modules-versioning), you can also write rules in your code. These rules
+are called ‘managed rules’ because they are defined in the code of modules, including your own [site module](/id/doc_developerguide_sites#guide-site-anatomy).
+
+While editing a simple set of ACL rules in the web interface is easier for end users, developers may prefer to manage
+more complex rules in code. Managed rules have two important advantages:
+
+*   they are equal between all environments (such as development, acceptance and production)
+*   when developing and deploying new features, ACL rules and code often belong together. By defining the rules in your code, you can commit and store them along with the feature code.
+
+If you haven’t yet done so, set up [module versioning](/id/doc_developerguide_modules#guide-modules-versioning) in
+`yoursite.erl` or `mod_your_module.erl`. Then, in the `manage_data/2` function, call the `m_acl_rule:replace_managed/3`
+function to add your new ACL rules.
+
+Note that you always to need a `manage_schema/2` function, even if it only returns `ok`. Otherwise the `manage_data/2`
+function will not be called:
+
+
+```erlang
+%% yoursite.erl
+-module(yoursite).
+
+-mod_title(\"Your Site\").
+-mod_description(\"An example module for the docs\").
+-mod_depends([ mod_acl_user_groups ]).
+-mod_schema(1).
+
+-export([
+    manage_schema/2,
+    manage_data/2
+]).
+
+%% .... more code here...
+manage_schema(install, Context) ->
+    #datamodel{
+        %% your resources...
+    };
+manage_schema({upgrade, 2}, Context) ->
+    %% code to upgrade from version 1 to 2
+    ok.
+
+manage_data(install, Context) ->
+    Rules = [
+        %% A resource ACL rule is defined as {rsc, Properties}
+        {rsc, [
+            {acl_user_group_id, acl_user_group_members},
+            {actions, [view, link]},
+            {is_owner, true},
+            {category_id, person}
+        ]},
+        %% A module rule is defined as {module, Properties}
+        {module, [
+            {acl_user_group_id, acl_user_group_editors},
+            {actions, [use]},
+            {module, mod_ginger_base}
+        ]},
+        %% A collaboration group rule is defined as {collab, Properties}
+        {collab, [
+            {is_owner, true},
+            {actions, [view, insert, update, link]},
+            {category_id, text}
+        ]}
+    ],
+    m_acl_rule:replace_managed(Rules, ?MODULE, Context);
+manage_data(_Upgrade, Context) ->
+    ok.
+```
+
+Compile the code and restart your module to load the managed rules. They will be added and immediately [published](#publishing-rules).
+
+The set of rules added with `m_acl:replace_managed/3` is *declarative* and *complete*. That is to say, you declare the
+full set of rules that you wish to define. Any changes or deletions that you make to the rules in your code, will
+propagate to the site’s rules. To protect the set’s completeness, managed rules cannot be altered in the web interface.
+
+
+
+Exporting and importing rules
+-----------------------------
+
+To back up your rules, go to *Auth > Access control rules* and click the ‘Export edit rules’ button. The backup will
+include the full hierarchies of all user and content groups.
+
+You can import a previous backup by clicking the ‘Import edit rules…’ button.
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_acl_add_sql_check`: Add ACL SQL constraints to search/query plans so result sets are filtered by user-group/content-group permissions.
+- `observe_acl_context_authenticated`: Refresh the authenticated context with resolved ACL group state after login/session auth changes.
+- `observe_acl_is_allowed`: Evaluate resource/action permission checks against compiled user-group/content-group ACL rules.
+- `observe_acl_is_allowed_prop`: Evaluate property-level view permissions, allowing anonymous `view` when no object is supplied.
+- `observe_acl_is_owner`: Treat users as owner of their own person resource, creator-owned resources, and optionally author-linked resources when `author_is_owner` is enabled.
+- `observe_acl_logoff`: Clear cached ACL group state from the context on logoff.
+- `observe_acl_logon`: Populate ACL group state for the logging-in user.
+- `observe_acl_user_groups`: Return the full effective user-group list for the current user.
+- `observe_admin_menu`: Add admin menu entries for User groups, Collaboration groups, and Access control rules.
+- `observe_edge_delete`: Log removal of `hasusergroup`, `hascollabmember`, and `hascollabmanager` membership edges.
+- `observe_edge_insert`: Log additions of `hasusergroup`, `hascollabmember`, and `hascollabmanager` membership edges.
+- `observe_hierarchy_updated`: Rebuild published/edit ACL lookup tables when category, content-group, or acl-user-group hierarchies change.
+- `observe_rsc_delete`: Block deletion of acl user groups that are still referenced by ACL rules or memberships.
+- `observe_rsc_get`: Set a default `privacy` value on resources without one (`collab_member` for persons, otherwise `public`).
+- `observe_rsc_insert`: Assign a default `content_group_id` on insert when none is provided, based on the resource category.
+- `observe_rsc_update`: Validate ACL-related updates and prevent non-ACL-admin users from changing `acl_mime_allowed` and `acl_upload_size`.
+- `observe_rsc_update_done`: Rebuild the `acl_user_group` hierarchy when a resource changes into or out of that category.
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `delete_all`, `set_config`.
+- `event/2` with `submit` messages: `delete_move`.
+
+See also
+
+[mod_content_groups](/id/doc_module_mod_content_groups), [Access control](/id/doc_developerguide_access_control#guide-auth)").
 
 -mod_title("ACL User Groups").
 -mod_description("Organize users into hierarchical groups").
 -mod_prio(400).
--mod_schema(12).
+-mod_schema(13).
 -mod_depends([menu, mod_content_groups]).
 -mod_provides([acl]).
+-mod_config([
+        #{
+            key => author_is_owner,
+            type => boolean,
+            default => false,
+            description => "If true, authors of resources are considered owners of the resource, and can edit it."
+        },
+        #{
+            key => collab_group_update,
+            type => string,
+            default => "",
+            description => "Who is allowed to update the collaboration group itself: member or manager"
+        },
+        #{
+            key => collab_group_link,
+            type => string,
+            default => "",
+            description => "Who is allowed to add connections to the collaboration group itself: member or manager"
+        }
+    ]).
 
 -behaviour(gen_server).
+-behaviour(zotonic_observer).
 
 -include_lib("zotonic_core/include/zotonic.hrl").
 -include("support/acl_user_groups.hrl").
@@ -43,6 +380,8 @@
     await_table/3,
     lookup/2,
     await_lookup/2,
+    match/2,
+    await_match/2,
     rebuild/2,
     observe_admin_menu/3,
     observe_rsc_update_done/2,
@@ -252,11 +591,12 @@ deletable(Ids, Context) ->
 
 
 % @doc Per default users own their person record and creators own the created content.
-observe_acl_is_owner(#acl_is_owner{id=Id, user_id=Id}, _Context) ->
+-spec observe_acl_is_owner(#acl_is_owner{}, z:context()) -> boolean() | undefined.
+observe_acl_is_owner(#acl_is_owner{user_id=UserId, id=UserId}, _Context) when is_integer(UserId) ->
     true;
-observe_acl_is_owner(#acl_is_owner{user_id=UserId, creator_id=UserId}, _Context) ->
+observe_acl_is_owner(#acl_is_owner{user_id=UserId, creator_id=UserId}, _Context) when is_integer(UserId) ->
     true;
-observe_acl_is_owner(#acl_is_owner{id=Id, user_id=UserId}, Context) ->
+observe_acl_is_owner(#acl_is_owner{id=Id, user_id=UserId}, Context) when is_integer(UserId) ->
     case m_config:get_boolean(?MODULE, author_is_owner, Context) of
         true ->
             As = m_edge:objects(Id, author, Context),
@@ -266,11 +606,15 @@ observe_acl_is_owner(#acl_is_owner{id=Id, user_id=UserId}, Context) ->
             end;
         false ->
             undefined
-    end.
+    end;
+observe_acl_is_owner(#acl_is_owner{}, _Context) ->
+    undefined.
 
+-spec observe_acl_is_allowed(#acl_is_allowed{}, z:context()) -> boolean() | undefined.
 observe_acl_is_allowed(AclIsAllowed, Context) ->
     acl_user_groups_checks:acl_is_allowed(AclIsAllowed, Context).
 
+-spec observe_acl_is_allowed_prop(#acl_is_allowed_prop{}, z:context()) -> boolean() | undefined.
 observe_acl_is_allowed_prop(#acl_is_allowed_prop{action=view, object=undefined}, _Context) ->
     true;
 observe_acl_is_allowed_prop(#acl_is_allowed_prop{action=view, object=Id, prop=Property}, #context{} = Context) when is_integer(Id) ->
@@ -278,21 +622,27 @@ observe_acl_is_allowed_prop(#acl_is_allowed_prop{action=view, object=Id, prop=Pr
 observe_acl_is_allowed_prop(#acl_is_allowed_prop{}, #context{user_id=undefined}) ->
     undefined.
 
+-spec observe_acl_logon(#acl_logon{}, z:context()) -> z:context() | undefined.
 observe_acl_logon(AclLogon, Context) ->
     acl_user_groups_checks:acl_logon(AclLogon, Context).
 
+-spec observe_acl_logoff(#acl_logoff{}, z:context()) -> z:context() | undefined.
 observe_acl_logoff(AclLogoff, Context) ->
     acl_user_groups_checks:acl_logoff(AclLogoff, Context).
 
+-spec observe_acl_context_authenticated(#acl_context_authenticated{}, z:context()) -> z:context() | undefined.
 observe_acl_context_authenticated(_AclAuthenticated, Context) ->
     acl_user_groups_checks:acl_context_authenticated(Context).
 
+-spec observe_acl_user_groups(#acl_user_groups{}, z:context()) -> Groups | undefined when
+    Groups :: [ m_rsc:resource_id() ].
 observe_acl_user_groups(_AclUserGroups, Context) ->
     acl_user_groups_checks:user_groups_all(Context).
 
 observe_acl_add_sql_check(AclAddSQLCheck, Context) ->
     acl_user_groups_checks:acl_add_sql_check(AclAddSQLCheck, Context).
 
+-spec observe_hierarchy_updated(#hierarchy_updated{}, z:context()) -> any().
 observe_hierarchy_updated(#hierarchy_updated{root_id= <<"$category">>, predicate=undefined}, Context) ->
     rebuild(Context);
 observe_hierarchy_updated(#hierarchy_updated{root_id= <<"content_group">>, predicate=undefined}, Context) ->
@@ -327,7 +677,7 @@ observe_rsc_update(#rsc_update{ id = Id, props = PrevProps }, {ok, NewProps}, Co
         orelse maps:is_key(<<"acl_upload_size">>, NewProps1)
     of
         true ->
-            case mod_acl_user_groups:is_acl_admin(Context) of
+            case is_acl_admin(Context) of
                 true ->
                     {ok, NewProps1};
                 false ->
@@ -346,6 +696,7 @@ force_copy_prop(P, PrevProps, NewProps) ->
     end.
 
 
+-spec observe_rsc_update_done(#rsc_update_done{}, z:context()) -> any().
 observe_rsc_update_done(#rsc_update_done{
             pre_is_a = PreIsA,
             post_is_a = PostIsA
@@ -358,6 +709,7 @@ observe_rsc_update_done(#rsc_update_done{
     end.
 
 %% @doc Do now allow the deletion of a acl_user_group if that group is still used.
+-spec observe_rsc_delete(#rsc_delete{}, z:context()) -> any().
 observe_rsc_delete(#rsc_delete{id=Id, is_a=IsA}, Context) ->
     case lists:member('acl_user_group', IsA) of
         true ->
@@ -383,6 +735,7 @@ observe_rsc_delete(#rsc_delete{id=Id, is_a=IsA}, Context) ->
             ok
     end.
 
+-spec observe_edge_insert(#edge_insert{}, z:context()) -> any().
 observe_edge_insert(#edge_insert{ predicate = hasusergroup } = L, Context) ->
     log_membership(L, Context);
 observe_edge_insert(#edge_insert{ predicate = hascollabmember } = L, Context) ->
@@ -392,6 +745,7 @@ observe_edge_insert(#edge_insert{ predicate = hascollabmanager } = L, Context) -
 observe_edge_insert(_, _Context) ->
     ok.
 
+-spec observe_edge_delete(#edge_delete{}, z:context()) -> any().
 observe_edge_delete(#edge_delete{ predicate = hasusergroup } = L, Context) ->
     log_membership(L, Context);
 observe_edge_delete(#edge_delete{ predicate = hascollabmember } = L, Context) ->
@@ -452,6 +806,9 @@ email_bin(Id, Context) ->
     z_convert:to_binary( m_rsc:p_no_acl(Id, email_raw, Context) ).
 
 %% @doc Ensure that the privacy property is set.
+-spec observe_rsc_get(#rsc_get{}, Acc, z:context()) -> Result when
+    Acc :: m_rsc:props(),
+    Result :: map().
 observe_rsc_get(#rsc_get{}, #{ <<"category_id">> := CatId } = Map, Context) ->
     case maps:get(<<"privacy">>, Map, undefined) of
         undefined ->
@@ -533,7 +890,22 @@ lookup1(TId, Key) ->
         [{_,V}|_] -> V
     end.
 
+match(Pattern, Context) ->
+    match1(table(Context), Pattern).
 
+await_match(Pattern, Context) ->
+    match1(await_table(Context), Pattern).
+
+match1(undefined, _Pattern) ->
+    [];
+match1(TId, Pattern) ->
+    ets:match(TId, Pattern).
+
+
+-spec observe_admin_menu(#admin_menu{}, Acc, z:context()) -> Result when
+    Acc :: MenuItems,
+    Result :: MenuItems,
+    MenuItems :: [ #menu_item{} ].
 observe_admin_menu(#admin_menu{}, Acc, Context) ->
     [
      #menu_item{id=admin_acl_user_groups,
@@ -559,7 +931,7 @@ name(Context) ->
 %%====================================================================
 %% API
 %%====================================================================
-%% @spec start_link(Args) -> {ok,Pid} | ignore | {error,Error}
+-spec start_link(list()) -> {ok, pid()} | ignore | {error, term()}.
 %% @doc Starts the server
 start_link(Args) when is_list(Args) ->
     {context, Context} = proplists:lookup(context, Args),
@@ -569,7 +941,8 @@ start_link(Args) when is_list(Args) ->
 %% gen_server callbacks
 %%====================================================================
 
-%% @spec init(Args) -> {ok, State} |
+-spec init(term()) -> {ok, term()} | {ok, term(), timeout() | hibernate} | ignore | {stop, term()}.
+%% init(Args) -> {ok, State} |
 %%                     {ok, State, Timeout} |
 %%                     ignore               |
 %%                     {stop, Reason}
@@ -664,7 +1037,7 @@ handle_info(Info, State) ->
     ?LOG_WARNING("[mod_acl_user_groups] unknown info message ~p", [Info]),
     {noreply, State}.
 
-%% @spec terminate(Reason, State) -> void()
+-spec terminate(term(), term()) -> ok.
 %% @doc This function is called by a gen_server when it is about to
 %% terminate. It should be the opposite of Module:init/1 and do any necessary
 %% cleaning up. When it returns, the gen_server terminates with Reason.
@@ -672,7 +1045,7 @@ handle_info(Info, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
+-spec code_change(term(), term(), term()) -> {ok, term()}.
 %% @doc Convert process state when code is changed
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -807,4 +1180,3 @@ manage_data(_Version, _Context) ->
 
 page_actions(Actions, Context) ->
     z_notifier:first(#page_actions{ actions = Actions }, Context).
-

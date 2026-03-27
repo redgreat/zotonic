@@ -1,8 +1,9 @@
 %% @author Maas-Maarten Zeeman <mmzeeman@xs4all.nl>
-%% @copyright 2021 Maas-Maarten Zeeman
+%% @copyright 2021-2026 Maas-Maarten Zeeman
 %% @doc Model for Microsoft services
+%% @end
 
-%% Copyright 2011 Maas-Maarten Zeeman
+%% Copyright 2011-2026 Maas-Maarten Zeeman
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,18 @@
 %% limitations under the License.
 
 -module(m_microsoft).
+-moduledoc("
+Check with `useauth` if the authentication using the Microsoft identity platform is enabled and configured.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/useauth/...` | Return whether Microsoft authentication integration is enabled. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 -author("Maas-Maarten Zeeman <mmzeeman@xs4all.nl").
 
 -behaviour(zotonic_model).

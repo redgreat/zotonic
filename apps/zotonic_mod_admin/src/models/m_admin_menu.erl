@@ -1,10 +1,9 @@
 %% @author Arjan Scherpenisse <arjan@scherpenisse.net>
-%% @copyright 2012 Arjan Scherpenisse <arjan@scherpenisse.net>
-%% Date: 2012-03-16
-
+%% @copyright 2012-2026 Arjan Scherpenisse <arjan@scherpenisse.net>
 %% @doc Zotonic: admin menu
+%% @end
 
-%% Copyright 2012 Arjan Scherpenisse
+%% Copyright 2012-2026 Arjan Scherpenisse
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -19,6 +18,21 @@
 %% limitations under the License.
 
 -module(m_admin_menu).
+-moduledoc("
+This model holds the admin menu, which is built up by calling each module to add items to the menu.
+
+You can extend the admin menu by observing the [admin_menu](/id/doc_notification_admin_menu#admin-menu) notification.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/` | Return the full admin menu tree for the current context (`menu/1`), including nested items, resolved URLs, sorting, and visibility filtering. No further lookups. |
+| `get` | `/menu/...` | Return the admin menu tree built from `#admin_menu` notifications, filtered by ACL/visible checks and organized into parent-child hierarchy. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 -author("Arjan Scherpenisse <arjan@scherpenisse.net>").
 
 -behaviour(zotonic_model).
@@ -126,15 +140,26 @@ item_visible({_Key, ItemProps}, Context) ->
                 end,
                 proplists:get_value(items, ItemProps, [])
             ) =/= [];
-        F when is_function(F, 0) ->
-            F();
-        F when is_function(F, 1) ->
-            F(Context);
-        {acl, Action, Object} ->
-            z_acl:is_allowed(Action, Object, Context)
+        C ->
+            visiblecheck(C, Context)
     end.
 
-
+visiblecheck(F, _Context) when is_function(F, 0) ->
+    F();
+visiblecheck(F, Context) when is_function(F, 1) ->
+    F(Context);
+visiblecheck({acl, Action, Object}, Context) ->
+    z_acl:is_allowed(Action, Object, Context);
+visiblecheck({allof, L}, Context) ->
+    lists:all(fun(C) -> visiblecheck(C, Context) end, L);
+visiblecheck({anyof, L}, Context) ->
+    lists:any(fun(C) -> visiblecheck(C, Context) end, L);
+visiblecheck(L, Context) when is_list(L) ->
+    lists:all(fun(C) -> visiblecheck(C, Context) end, L);
+visiblecheck(true, _Context) ->
+    true;
+visiblecheck(false, _Context) ->
+    false.
 
 test() ->
     C = z:c(zotonic_site_status),
@@ -195,4 +220,3 @@ test() ->
              {label, "Label"},
              {items, []}]}] = hierarchize(Items3, C),
     ok.
-

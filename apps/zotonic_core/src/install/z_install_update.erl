@@ -1,10 +1,10 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2024 Marc Worrell
+%% @copyright 2009-2025 Marc Worrell
 %% @doc This server will install the database when started. It will always return ignore to the supervisor.
 %% This server should be started after the database pool but before any database queries will be done.
 %% @end
 
-%% Copyright 2009-2024 Marc Worrell
+%% Copyright 2009-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 
 -behaviour(gen_server).
 
+
 %% gen_server exports
 -export([
     start_link/1, init/1,
@@ -35,12 +36,14 @@
 
 -include_lib("kernel/include/logger.hrl").
 
+% From z_db_pgsql.erl
+-define(TERM_MAGIC_NUMBER, 16#01326A3A:1/big-unsigned-unit:32).
 
 %%====================================================================
 %% API
 %%====================================================================
 
--spec start_link(list()) -> ignore | {error, database|term()}.
+-spec start_link(list()) -> gen_server:start_ret().
 %% @doc Install zotonic on the databases in the PoolOpts, skips when already installed.
 start_link(SiteProps) when is_list(SiteProps) ->
     gen_server:start_link(?MODULE, SiteProps, []).
@@ -126,12 +129,13 @@ check_db_and_upgrade(Context, Tries) when Tries =< 2 ->
                     %% Normal startup, do upgrade / check
                     ok = z_db:transaction(
                             fun(Context1) ->
-                                C = z_db_pgsql:get_raw_connection(Context1),
+                                {ok, C} = z_db_pgsql:get_raw_connection(Context1),
                                 Database = proplists:get_value(dbdatabase, DbOptions),
                                 Schema = proplists:get_value(dbschema, DbOptions),
                                 ok = upgrade(C, Database, Schema),
                                 ok = upgrade_models(Context),
-                                ok = sanity_check(C, Database, Schema)
+                                ok = sanity_check(C, Database, Schema),
+                                ok = z_db_pgsql:release_raw_connection(Context1)
                             end,
                             Context),
                     ok
@@ -242,6 +246,17 @@ has_column(C, Table, Column, Database, Schema) ->
               and column_name = $4", [Database, Schema, Table, Column]),
     HasColumn =:= 1.
 
+has_function(C, Function, _Database, Schema) ->
+    {ok, _, [{HasFunction}]} = epgsql:equery(C, "
+        select count(*)
+        from pg_proc p
+        join pg_namespace n
+          on p.pronamespace = n.oid
+        where n.nspname = $1
+          and p.proname = $2
+        ", [Schema, Function]),
+    HasFunction =:= 1.
+
 get_column_type(C, Table, Column, Database, Schema) ->
     {ok, _, [{ColumnType}]} = epgsql:equery(C, "
             select data_type
@@ -316,10 +331,14 @@ upgrade(C, Database, Schema) ->
     ok = task_queue_error_count(C, Database, Schema),
     ok = identity_expires(C, Database, Schema),
     ok = rsc_unfindable(C, Database, Schema),
+    ok = identity_rsc_id_type_key_constraint(C, Database, Schema),
     ok = rsc_pivot_log(C, Database, Schema),
     ok = medium_size_bigint(C, Database, Schema),
     ok = media_frame_count(C, Database, Schema),
     ok = identity_log(C, Database, Schema),
+    ok = medium_update_v2(C, Database, Schema),
+    ok = pivot_page_path(C, Database, Schema),
+    ok = medium_update_function_check(C, Database, Schema),
     ok.
 
 
@@ -547,7 +566,8 @@ install_medium_log(C, Database, Schema) ->
                                    where m.filename is not null
                                    and m.filename <> ''
                                    and m.is_deletable_file
-                                   "),
+                                on conflict (filename) do nothing
+                                "),
             {ok, _} = epgsql:squery(C,
                                    "
                                 insert into medium_log (usr_id, filename, created)
@@ -556,7 +576,8 @@ install_medium_log(C, Database, Schema) ->
                                    where m.preview_filename is not null
                                    and m.preview_filename <> ''
                                    and m.is_deletable_preview
-                                   "),
+                                on conflict (filename) do nothing
+                                "),
             ok;
         true ->
             ok
@@ -854,7 +875,7 @@ task_queue_error_count(C, Database, Schema) ->
 
             lists:foreach(
                 fun({TaskId, Props}) ->
-                    case task_error_ct(z_db_pgsql:decode_value(Props)) of
+                    case task_error_ct(Props) of
                         N when is_integer(N), N > 0 ->
                             {ok, _} = epgsql:equery(C, "
                                             update pivot_task_queue
@@ -928,6 +949,29 @@ rsc_unfindable(C, Database, Schema) ->
     end.
 
 
+identity_rsc_id_type_key_constraint(C, Database, Schema) ->
+    case has_constraint(C, "identity", "identity_rsc_id_type_key_unique", Database, Schema) of
+        true ->
+            ok;
+        false ->
+            ?LOG_NOTICE(#{
+                text => <<"Upgrade: adding rsc_id, type and key unique constraint to identity">>,
+                in => zotonic_core,
+                database => Database,
+                schema => Schema,
+                table => identity
+            }),
+            {ok, _} = epgsql:squery(C, "DELETE FROM identity i1 USING identity i2
+                                        WHERE i1.id < i2.id
+                                          AND i1.rsc_id = i2.rsc_id
+                                          AND i1.type = i2.type
+                                          AND i1.key = i2.key;"),
+            {ok, [], []} = epgsql:squery(C, "ALTER TABLE identity
+                                             ADD CONSTRAINT identity_rsc_id_type_key_unique
+                                             UNIQUE (rsc_id, type, key)"),
+            ok
+    end.
+
 media_frame_count(C, Database, Schema) ->
     case has_column(C, "medium", "frame_count", Database, Schema) of
         true ->
@@ -938,7 +982,7 @@ media_frame_count(C, Database, Schema) ->
                 in => zotonic_core,
                 database => Database,
                 schema => Schema,
-                table => rsc
+                table => medium
             }),
             {ok, [], []} = epgsql:squery(C,
                                     "alter table medium "
@@ -965,7 +1009,27 @@ rsc_pivot_log(C, Database, Schema) ->
             epgsql:squery(C, "drop table if exists rsc_pivot_queue cascade"),
             ok;
         true ->
-            ok
+            case has_column(C, "rsc_pivot_log", "priority", Database, Schema) of
+                true ->
+                    ok;
+                false ->
+                    ?LOG_NOTICE(#{
+                        text => <<"Upgrade: adding priority column rsc_pivot_log">>,
+                        in => zotonic_core,
+                        database => Database,
+                        schema => Schema,
+                        table => rsc_pivot_log
+                    }),
+                    {ok, [], []} = epgsql:squery(C,
+                                            "alter table rsc_pivot_log "
+                                            "add column priority int not null default 1"),
+                    {ok, [], []} = epgsql:squery(C, "
+                        DROP INDEX IF EXISTS rsc_pivot_log_update_due_key"),
+                    {ok, [], []} = epgsql:squery(C, "
+                        CREATE INDEX IF NOT EXISTS rsc_pivot_log_update_priority_due_key
+                        ON rsc_pivot_log (priority, is_update, due)"),
+                    ok
+            end
     end.
 
 identity_log(C, Database, Schema) ->
@@ -981,11 +1045,45 @@ identity_log(C, Database, Schema) ->
             ok
     end.
 
+medium_update_v2(C, Database, Schema) ->
+    case has_function(C, "medium_delete", Database, Schema) of
+        true ->
+            % The medium_update function now also handles deletes.
+            % Replace the previous delete handler and add the new update function.
+            {ok,[],[]} = epgsql:squery(C, "DROP FUNCTION IF EXISTS medium_delete CASCADE"),
+            {ok,[],[]} = epgsql:squery(C, z_install:medium_update_function()),
+            {ok,[],[]} = epgsql:squery(C, z_install:medium_update_trigger_drop()),
+            {ok,[],[]} = epgsql:squery(C, z_install:medium_update_trigger()),
+            ok;
+        false ->
+            ok
+    end.
+
+medium_update_function_check(C, Database, Schema) ->
+    % Check if the medium update function needs replacing.
+    {ok, _, [{ProcSrc}]} = epgsql:equery(C,
+                            "
+                        select routine_definition
+                        from information_schema.routines
+                        where routine_name = 'medium_update'
+                          and specific_schema = $1
+                          and specific_catalog = $2
+                        ",
+                        [Schema, Database]),
+    NewSrc = z_convert:to_binary(z_install:medium_update_function()),
+    [_, NewSrc1, _] = binary:split(NewSrc, <<"$$">>, [ global ]),
+    NewSrc2 = z_string:trim(NewSrc1),
+    ProcSrc1 = z_string:trim(ProcSrc),
+    if
+        NewSrc2 =/= ProcSrc1 ->
+            {ok,[],[]} = epgsql:squery(C, z_install:medium_update_function());
+        true ->
+            ok
+    end,
+    ok.
+
 check_category_id_key(C, _Database, _Schema) ->
-    {ok, [], []} = epgsql:squery(
-        C,
-        "CREATE INDEX IF NOT EXISTS fki_rsc_category_id ON rsc (category_id)"
-    ),
+    {ok,[],[]} = epgsql:squery(C, "CREATE INDEX IF NOT EXISTS fki_rsc_category_id ON rsc (category_id)"),
     ok.
 
 medium_size_bigint(C, Database, Schema) ->
@@ -994,6 +1092,78 @@ medium_size_bigint(C, Database, Schema) ->
             ok;
         _ ->
             {ok,[],[]} = epgsql:squery(C, "alter table medium alter column size type bigint"),
+            ok
+    end.
+
+pivot_page_path(C, Database, Schema) ->
+    case has_column(C, "rsc", "pivot_page_path", Database, Schema) of
+        true ->
+            ok;
+        false ->
+            ?LOG_NOTICE(#{
+                text => <<"Upgrade: adding pivot_page_path column to rsc">>,
+                in => zotonic_core,
+                database => Database,
+                schema => Schema,
+                table => rsc
+            }),
+            {ok, _, Rscs} = epgsql:equery(C, "
+                select id, page_path
+                from rsc
+                where page_path is not null and page_path <> ''"),
+            {ok, [], []} = epgsql:squery(C,
+                                    "alter table rsc "
+                                    "add column pivot_page_path character varying(80)[],"
+                                    "drop constraint if exists rsc_page_path_key"),
+            {ok, _} = epgsql:squery(C,
+                                    "update rsc "
+                                    "set pivot_page_path = array[page_path]"
+                                    "where page_path is not null and page_path <> ''"),
+            {ok, [], []} = epgsql:squery(C,
+                                    "alter table rsc "
+                                    "drop column page_path"),
+            {ok, [], []} = epgsql:squery(C,
+                                    "CREATE INDEX IF NOT EXISTS rsc_pivot_page_path_key ON rsc USING gin(pivot_page_path)"),
+            ?LOG_NOTICE(#{
+                text => <<"Upgrade: fixing page_path property of resources with page_path">>,
+                in => zotonic_core,
+                database => Database,
+                schema => Schema,
+                table => rsc,
+                count => length(Rscs)
+            }),
+            % Ensure the page_path is moved to the rsc props
+            lists:foreach(
+                fun({Id, Path}) ->
+                    case epgsql:equery(C, "select props from rsc where id = $1", [Id]) of
+                        {ok, _, [ {<<?TERM_MAGIC_NUMBER, B/binary>>} ]} ->
+                            Props = case binary_to_term(B) of
+                                Ps when is_list(Ps) ->
+                                    z_props:from_props(Ps);
+                                Ps when is_map(Ps) ->
+                                    Ps;
+                                _ ->
+                                    #{}
+                            end,
+                            Props1 = Props#{ <<"page_path">> => Path },
+                            PropsBin = <<?TERM_MAGIC_NUMBER, (term_to_binary(Props1))/binary>>,
+                            {ok, _} = epgsql:equery(C, "update rsc set props = $2 where id = $1", [ Id, PropsBin ]);
+                        {ok, _, [ {Props} ]} when is_map(Props) ->
+                            Props1 = Props#{ <<"page_path">> => Path },
+                            PropsBin = <<?TERM_MAGIC_NUMBER, (term_to_binary(Props1))/binary>>,
+                            {ok, _} = epgsql:equery(C, "update rsc set props = $2 where id = $1", [ Id, PropsBin ]);
+                        {ok, _, [ {Props} ]} when is_list(Props) ->
+                            Props1 = z_props:from_props(Props),
+                            Props2 = Props1#{ <<"page_path">> => Path },
+                            PropsBin = <<?TERM_MAGIC_NUMBER, (term_to_binary(Props2))/binary>>,
+                            {ok, _} = epgsql:equery(C, "update rsc set props = $2 where id = $1", [ Id, PropsBin ]);
+                        {ok, _, [ {null} ]} ->
+                            ok;
+                        {ok, _, []} ->
+                            ok
+                    end
+                end,
+                Rscs),
             ok
     end.
 

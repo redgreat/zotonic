@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2012-2021 Marc Worrell
 %% @doc Get the sub tree of an id in a menu (if any)
+%% @end
 
 %% Copyright 2012-2021 Marc Worrell
 %%
@@ -17,6 +18,18 @@
 %% limitations under the License.
 
 -module(filter_menu_subtree).
+-moduledoc("
+Get the subtree of an id in a menu (if any).
+
+Returns the subtree of the filter value. Useful for showing a part of a menu when browsing sub-pages.
+
+If the given id is not found inside the menu, it returns `undefined`.
+
+If no argument is given, it takes menu from the resource with the name `main_menu`.
+
+See also
+
+[menu_trail](/id/doc_template_filter_filter_menu_trail), [menu_flat](/id/doc_template_filter_filter_menu_flat)").
 -export([
     menu_subtree/2,
     menu_subtree/3,

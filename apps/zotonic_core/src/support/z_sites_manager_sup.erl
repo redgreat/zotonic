@@ -1,6 +1,7 @@
 %% @author Maas-Maarten Zeeman <mmzeeman@xs4all.nl>
 %% @copyright 2012-2017 Maas-Maarten Zeeman
 %% @doc Supervisor for sites dispatcher and manager
+%% @end
 
 %% Copyright 2012-2017 Maas-Maarten Zeeman
 %%
@@ -28,7 +29,7 @@
 -export([init/1]).
 
 %% @doc API for starting the sites dispatcher and manager
--spec start_link() -> {ok, pid()} | {error, term()}.
+-spec start_link() -> supervisor:startlink_ret().
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 

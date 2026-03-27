@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2011 Marc Worrell
 %% @doc Select the language from a list of languages
+%% @end
 
 %% Copyright 2011 Marc Worrell
 %%
@@ -17,6 +18,22 @@
 %% limitations under the License.
 
 -module(filter_language).
+-moduledoc("
+Return the language the resource (or translated text) will be displayed in.
+
+Example:
+
+
+```erlang
+{{ id|language }}
+```
+
+The languages of the resource will be fetched and using the currently selected interface language (variable
+`z_language`) the language for the resource to be displayed in will be returned.
+
+See also
+
+[language_dir](/id/doc_template_filter_filter_language_dir), [is_rtl](/id/doc_template_filter_filter_is_rtl)").
 -export([
     language/2
 ]).

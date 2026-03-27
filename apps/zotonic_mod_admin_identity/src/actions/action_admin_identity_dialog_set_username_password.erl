@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2023 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Open a dialog with some fields to add or change a username/password identity
+%% @end
 
-%% Copyright 2009-2023 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,14 @@
 %% limitations under the License.
 
 -module(action_admin_identity_dialog_set_username_password).
+-moduledoc("
+Show a dialog for setting a username / password on the given [resource](/id/doc_glossary#term-resource) (which is
+usually a person).
+
+Todo
+
+Extend documentation
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 %% interface functions
@@ -56,7 +65,7 @@ render_action(TriggerId, TargetId, Args, Context) ->
 
 
 %% @doc Fill the dialog with the new page form. The form will be posted back to this module.
-%% @spec event(Event, Context1) -> Context2
+-spec event(term(), z:context()) -> z:context().
 event(#postback{message={set_username_password, Id, OnDelete}}, Context) ->
     Username = m_identity:get_username(Id, Context),
     Vars = [

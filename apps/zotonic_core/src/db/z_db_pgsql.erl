@@ -1,9 +1,14 @@
 %% @author Arjan Scherpenisse <arjan@scherpenisse.net>
-%% @copyright 2014-2024 Arjan Scherpenisse
-%% @doc Postgresql pool worker
+%% @copyright 2014-2025 Arjan Scherpenisse
+%% @doc Postgresql pool worker. Supervises a database connection, ensures
+%% it is connected. The connection is given to the query process. If the
+%% query process doesn't return the connection, then the connection is reset.
+%%
+%% The connection is given to the query process to prevent extra copying of
+%% query results between the worker and the query process.
 %% @end
 
-%% Copyright 2014-2024 Arjan Scherpenisse
+%% Copyright 2014-2025 Arjan Scherpenisse
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -39,23 +44,20 @@
     pool_get_connection/1,
     is_connection_alive/1,
 
+    build_connect_options/2,
+
     ensure_all_started/0,
     test_connection/1,
     squery/3,
     equery/4,
     execute_batch/4,
-    get_raw_connection/1
+    get_raw_connection/1,
+    release_raw_connection/1
 ]).
-
-%% Used by the z_install_update to access props columns
--export([
-    decode_value/1
-    ]).
-
--define(TERM_MAGIC_NUMBER, 16#01326A3A:1/big-unsigned-unit:32).
 
 -define(CONNECT_TIMEOUT, 5000).
 -define(IDLE_TIMEOUT, 60000).
+-define(RAW_CONN_TIMEOUT, 2*3600*1000).
 
 -define(CONNECT_RETRIES, 50).
 -define(CONNECT_RETRY_SHORT,   100).
@@ -73,15 +75,40 @@
     busy_ref = undefined :: undefined | reference(),
     busy_timeout = undefined :: undefined | integer(),
     busy_start = undefined :: undefined | pos_integer(),
-    busy_sql = undefined :: undefined | string() | binary(),
+    busy_sql = undefined :: undefined | string() | binary() | raw,
     busy_params = [] :: list(),
-    busy_tracing = false :: boolean()
+    busy_tracing = false :: boolean(),
+    canceled_busy_ref = undefined :: undefined | pid(),
+    is_paused = false :: boolean(),
+    pause_waiting = undefined
 }).
 
--type query_result() :: epgsql:reply(epgsql:equery_row())
-                      | epgsql:reply(epgsql:squery_row()).
 
--export_type([ query_result/0 ]).
+-type error() :: {error, query_error()}
+               | epgsql_sock:error().
+
+-type query_error() :: epgsql:query_error()
+                     | query_timeout
+                     | connection_down
+                     | paused
+                     | term().
+
+-type query_result() :: squery_result()
+                      | equery_result().
+
+-type squery_result() :: epgsql_cmd_squery:response()
+                       | error().
+
+-type equery_result() :: epgsql_cmd_equery:response()
+                       | error().
+
+-export_type([
+    query_result/0,
+    squery_result/0,
+    equery_result/0,
+    query_error/0,
+    error/0
+]).
 
 
 %%
@@ -101,7 +128,7 @@ test_connection(Args) ->
     end.
 
 ensure_all_started() ->
-    application:ensure_all_started(epgsql).
+    application:ensure_all_started(epgsql, permanent).
 
 test_connection_1(Args) ->
     case connect(Args) of
@@ -168,20 +195,17 @@ pool_return_connection(Worker, Context) ->
     Worker :: pid(),
     Sql :: string() | binary(),
     Timeout :: pos_integer(),
-    Result :: query_result().
+    Result :: squery_result().
 squery(Worker, Sql, Timeout) ->
-    case is_connection_alive(Worker) of
-        true ->
-            case fetch_conn(Worker, Sql, [], Timeout) of
-                {ok, {Conn, Ref}} ->
-                    Result = epgsql:squery(Conn, Sql),
-                    ok = return_conn(Worker, Ref),
-                    decode_reply(Result);
-                {error, _} = Error ->
-                    Error
+    case fetch_conn(Worker, Sql, [], Timeout) of
+        {ok, {Conn, Ref}} ->
+            try
+                maybe_map_error(epgsql:squery(Conn, Sql))
+            after
+                ok = return_conn(Worker, Ref)
             end;
-        false ->
-            {error, connection_down}
+        {error, _} = Error ->
+            Error
     end.
 
 %% @doc Query with parameters, the query is interrupted if it takes
@@ -191,20 +215,17 @@ squery(Worker, Sql, Timeout) ->
     Sql :: string() | binary(),
     Parameters :: list(),
     Timeout :: pos_integer(),
-    Result :: query_result().
+    Result :: equery_result().
 equery(Worker, Sql, Parameters, Timeout) ->
-    case is_connection_alive(Worker) of
-        true ->
-            case fetch_conn(Worker, Sql, Parameters, Timeout) of
-                {ok, {Conn, Ref}} ->
-                    Result = epgsql:equery(Conn, Sql, encode_values(Parameters)),
-                    ok = return_conn(Worker, Ref),
-                    decode_reply(Result);
-                {error, _} = Error ->
-                    Error
+    case fetch_conn(Worker, Sql, Parameters, Timeout) of
+        {ok, {Conn, Ref}} ->
+            try
+                maybe_map_error(epgsql:equery(Conn, Sql, Parameters))
+            after
+                ok = return_conn(Worker, Ref)
             end;
-        false ->
-            {error, connection_down}
+        {error, _} = Error ->
+            Error
     end.
 
 %% @doc Batch Query, the query is interrupted if it takes
@@ -214,22 +235,44 @@ equery(Worker, Sql, Parameters, Timeout) ->
     Sql :: string() | binary(),
     Batch :: list( list() ),
     Timeout :: pos_integer(),
-    Result :: query_result().
+    Result :: {ok, [ equery_result() ]}
+            | {error, connection_down | term()}.
 execute_batch(Worker, Sql, Batch, Timeout) ->
-    case is_connection_alive(Worker) of
-        true ->
-            case fetch_conn(Worker, Sql, Batch, Timeout) of
-                {ok, {Conn, Ref}} ->
-                    EncodedBatch = [encode_values(P) || P <- Batch],
-                    Result = epgsql:execute_batch(Conn, Sql, EncodedBatch),
-                    ok = return_conn(Worker, Ref),
-                    decode_reply(Result);
-                {error, _} = Error ->
-                    Error
+    case fetch_conn(Worker, Sql, Batch, Timeout) of
+        {ok, {Conn, Ref}} ->
+            try
+                {Columns, Result} = epgsql:execute_batch(Conn, Sql, Batch),
+                Result1 = lists:map(
+                            fun
+                                ({ok, Count, Rows}) when is_list(Rows) ->
+                                    {ok, Count, Columns, Rows};
+                                ({ok, Rows}) when is_list(Rows) ->
+                                    {ok, Columns, Rows};
+                                ({ok, _} = Ok) ->
+                                    Ok;
+                                ({error, _} = Error) ->
+                                    maybe_map_error(Error)
+                            end,
+                            Result),
+                {ok, Result1}
+            after
+                ok = return_conn(Worker, Ref)
             end;
-        false ->
-            {error, connection_down}
+        {error, _} = Error ->
+            Error
     end.
+
+maybe_map_error({error, #error{ codename = query_canceled }}) ->
+    {error, query_timeout};
+maybe_map_error({error, _} = Error) ->
+    Error;
+maybe_map_error({ok, _, _, _} = Result) ->
+    Result;
+maybe_map_error({ok, _, _} = Result) ->
+    Result;
+maybe_map_error({ok, _} = Result) ->
+    Result.
+
 
 %% @doc Request the SQL connection from the worker. The query is passed for logging
 % purposes. This caller will do the query using the returned connection.
@@ -240,29 +283,35 @@ execute_batch(Worker, Sql, Batch, Timeout) ->
     Timeout :: pos_integer(),
     Conn :: pid(),
     Ref :: reference(),
-    Reason :: term().
+    Reason :: paused | connection_down | term().
 fetch_conn(Worker, Sql, Parameters, Timeout) ->
-    case is_connection_alive(Worker) of
-        true ->
-            try
-                Ref = erlang:make_ref(),
-                {ok, Conn} = gen_server:call(Worker, {fetch_conn, Ref, self(), Sql, Parameters, Timeout, is_tracing()}),
-                {ok, {Conn, Ref}}
-            catch
-                exit:Reason:Stack ->
-                    ?LOG_ERROR(#{
-                        text => <<"Fetch connection failed.">>,
-                        in => zotonic_core,
-                        result => exit,
-                        reason => Reason,
-                        stack => Stack,
-                        worker_pid => Worker,
-                        sql => Sql
-                    }),
-                    {error, Reason}
-            end;
-        false ->
-            {error, connection_down}
+    Ref = erlang:make_ref(),
+    try
+        case gen_server:call(Worker, {fetch_conn, Ref, self(), Sql, Parameters, Timeout, is_tracing()}) of
+            {ok, Conn} ->
+                {ok, {Conn, Ref}};
+            {error, paused} ->
+                {error, paused}
+        end
+    catch
+        exit:{noproc, _} ->
+            %% The worker process is gone.
+            {error, connection_down};
+        exit:{normal, _} ->
+            %% The worker went down after the call was sent, but
+            %% the worker exited normally.
+            {error, connection_down};
+        exit:Reason:Stack ->
+            ?LOG_ERROR(#{
+                         text => <<"Fetch connection failed.">>,
+                         in => zotonic_core,
+                         result => exit,
+                         reason => Reason,
+                         stack => Stack,
+                         worker_pid => Worker,
+                         sql => Sql
+                        }),
+            {error, Reason}
     end.
 
 %% @doc Return the SQL connection to the worker, must be done within the timeout
@@ -291,8 +340,22 @@ is_tracing() ->
 %% @doc This function MUST NOT be used, but currently is required by the
 %% install / upgrade routines. Can only be called from inside a
 %% z_db:transaction/2.
+-spec get_raw_connection(Context) -> {ok, ConnPid} | {error, Reason} when
+    Context :: z:context(),
+    ConnPid :: pid(),
+    Reason :: term().
 get_raw_connection(#context{dbc=Worker}) when Worker =/= undefined ->
-    gen_server:call(Worker, get_raw_connection).
+    gen_server:call(Worker, {get_raw_connection, self()}).
+
+%% @doc After a connection is fetched using get_raw_connection/1, use this
+%% to release the connection again. Otherwise the connection can not be used
+%% for other SQL queries. This must be called from inside the same transaction
+%% as get_raw_connection/1 was called.
+-spec release_raw_connection(Context) -> ok | {error, Reason} when
+    Context :: z:context(),
+    Reason :: term().
+release_raw_connection(#context{dbc=Worker}) when Worker =/= undefined ->
+    gen_server:call(Worker, {release_raw_connection, self()}).
 
 
 %%
@@ -304,6 +367,16 @@ init(Args) ->
     process_flag(trap_exit, true),
     {ok, #state{conn=undefined, conn_args=Args}, ?IDLE_TIMEOUT}.
 
+handle_call(pause, _From, #state{ is_paused = true } = State) ->
+    {reply, ok, State};
+handle_call(pause, _From, #state{ busy_pid = undefined } = State) ->
+    {reply, ok, State#state{ is_paused = true, pause_waiting = undefined }};
+handle_call(pause, From, #state{ busy_pid = _Pid } = State) ->
+    {noreply, State#state{ is_paused = true, pause_waiting = From }};
+
+handle_call(unpause, _From, State) ->
+    {reply, ok, State#state{ is_paused = false, pause_waiting = undefined }};
+
 handle_call({pool_return_connection_check, _CallerPid}, _From, #state{ busy_pid = undefined } = State) ->
     {reply, ok, State};
 handle_call({pool_return_connection_check, CallerPid}, From, #state{
@@ -312,7 +385,7 @@ handle_call({pool_return_connection_check, CallerPid}, From, #state{
             busy_params = Params
         } = State) ->
     ?LOG_ERROR(#{
-        text => <<"Connection return to pool by but still running">>,
+        text => <<"Connection return to pool by worker but still running">>,
         in => zotonic_core,
         result => error,
         reason => running,
@@ -324,7 +397,10 @@ handle_call({pool_return_connection_check, CallerPid}, From, #state{
     }),
     gen_server:reply(From, {error, checkin_busy}),
     State1 = disconnect(State),
-    {stop, normal, State1};
+    {stop, normal, {error, running}, State1};
+
+handle_call({fetch_conn, _Ref, _CallerPid, _Sql, _Params, _Timeout, _IsTracing}, _From, #state{ is_paused = true } = State) ->
+    {reply, {error, paused}, State};
 
 handle_call({fetch_conn, _Ref, _CallerPid, _Sql, _Params, _Timeout, _IsTracing} = Cmd, From,
             #state{ busy_pid = undefined, conn = undefined, conn_args = Args } = State) ->
@@ -346,7 +422,8 @@ handle_call({fetch_conn, Ref, CallerPid, Sql, Params, Timeout, IsTracing}, _From
         busy_start = Start,
         busy_sql = Sql,
         busy_params = Params,
-        busy_tracing = IsTracing
+        busy_tracing = IsTracing,
+        canceled_busy_ref = undefined
     },
     {reply, {ok, State#state.conn}, State1, Timeout};
 
@@ -368,7 +445,7 @@ handle_call({fetch_conn, _Ref, CallerPid, Sql, Params, _Timeout, _IsTracing}, Fr
     }),
     gen_server:reply(From, {error, busy}),
     State1 = disconnect(State),
-    {stop, normal, State1};
+    {stop, normal, {error, busy}, State1};
 
 handle_call({fetch_conn, _Ref, CallerPid, Sql, Params, _Timeout, _IsTracing}, _From, #state{ busy_pid = OtherPid } = State) ->
     % This can happen if a connection is shared by two processes.
@@ -402,13 +479,13 @@ handle_call({return_conn, Ref, Pid}, _From,
     State1 = reset_busy_state(State),
     {reply, ok, State1, timeout(State1)};
 
-handle_call({return_conn, _Ref, Pid}, _From, #state{ busy_pid = undefined } = State) ->
-    ?LOG_ERROR(#{
-        text => <<"SQL connection returned but not in use.">>,
+handle_call({return_conn, Ref, Pid}, _From, #state{ busy_pid = undefined, canceled_busy_ref = Ref } = State) ->
+    ?LOG_INFO(#{
+        text => <<"SQL connection returned after cancel">>,
         in => zotonic_core,
         request_pid => Pid
     }),
-    {reply, {error, idle}, State, timeout(State)};
+    {reply, ok, State#state{ canceled_busy_ref = undefined }, timeout(State)};
 
 handle_call({return_conn, _Ref, Pid}, _From, #state{ busy_pid = OtherPid } = State) ->
     ?LOG_ERROR(#{
@@ -422,16 +499,47 @@ handle_call({return_conn, _Ref, Pid}, _From, #state{ busy_pid = OtherPid } = Sta
     }),
     {reply, {error, notyours}, State, timeout(State)};
 
-handle_call(get_raw_connection, From, #state{ conn = undefined, conn_args = Args } = State) ->
+handle_call({get_raw_connection, CallerPid}, _From, #state{ busy_pid = BusyPid } = State) when BusyPid =/= undefined, CallerPid =/= BusyPid ->
+    ?LOG_ERROR(#{
+        text => <<"Raw SQL connection requested but already in use by other pid">>,
+        in => zotonic_core,
+        result => error,
+        reason => busy,
+        request_pid => CallerPid,
+        busy_pid => BusyPid,
+        worker_pid => self()
+    }),
+    {reply, {error, busy}, State, timeout(State)};
+handle_call({get_raw_connection, CallerPid}, From, #state{ conn = undefined, conn_args = Args } = State) ->
     case connect(Args, From) of
         {ok, Conn} ->
             erlang:monitor(process, Conn),
-            handle_call(get_raw_connection, From, State#state{conn=Conn});
+            handle_call({get_raw_connection, CallerPid}, From, State#state{conn=Conn});
         {error, _} = E ->
             {reply, E, State}
     end;
-handle_call(get_raw_connection, _From, #state{ conn = Conn } = State) ->
-    {reply, Conn, State, timeout(State)};
+handle_call({get_raw_connection, CallerPid}, _From, #state{ conn = Conn } = State) ->
+    State1 = State#state{
+        busy_monitor = erlang:monitor(process, CallerPid),
+        busy_pid = CallerPid,
+        busy_sql = raw
+    },
+    {reply, {ok, Conn}, State1, ?RAW_CONN_TIMEOUT};
+
+handle_call({release_raw_connection, CallerPid}, _From, #state{ busy_pid = BusyPid } = State) when BusyPid =:= CallerPid ->
+    State1 = demonitor_busy(State),
+    {reply, ok, State1, ?IDLE_TIMEOUT};
+handle_call({release_raw_connection, CallerPid}, _From, #state{ busy_pid = BusyPid } = State) ->
+    ?LOG_ERROR(#{
+        text => <<"Raw SQL connection released but in use by other pid">>,
+        in => zotonic_core,
+        result => error,
+        reason => busy,
+        request_pid => CallerPid,
+        busy_pid => BusyPid,
+        worker_pid => self()
+    }),
+    {reply, {error, notyours}, State, ?RAW_CONN_TIMEOUT};
 
 handle_call(Message, _From, State) ->
     ?LOG_NOTICE(#{
@@ -476,7 +584,7 @@ handle_info(disconnect, State) ->
         args => State#state.busy_params,
         worker_pid => self()
     }),
-    {noreply, State, disconnect(State), hibernate};
+    {stop, normal, disconnect(State)};
 
 handle_info(timeout, #state{ busy_pid = undefined } = State) ->
     % Idle timeout - no SQL query is running
@@ -488,10 +596,7 @@ handle_info(timeout, #state{
         busy_params = Params,
         busy_timeout = Timeout
     } = State) ->
-    % Query timeout - pull the connection from underneath the caller
-    % The connection needs to be killed to stop the out-of-bounds query
-    % on the db server. This to prevent that long running queries are
-    % filling up all our connections and also slowing down the database.
+    % Query timeout - cancel the running query.
     Database = get_arg(dbdatabase, State#state.conn_args),
     Schema = get_arg(dbschema, State#state.conn_args),
     ?LOG_ERROR(#{
@@ -507,8 +612,8 @@ handle_info(timeout, #state{
         args => Params,
         worker_pid => self()
     }),
-    State1 = disconnect(State),
-    {stop, normal, State1};
+    State1 = cancel(State),
+    {noreply, State1, hibernate};
 
 handle_info({'DOWN', _Ref, process, BusyPid, Reason}, #state{
         busy_pid = BusyPid,
@@ -605,10 +710,30 @@ code_change(_OldVsn, State, _Extra) ->
 %% Helper functions
 %%
 
-%% @doc Close the connection to the SQL server
+%% @doc Cancel the running query.
+cancel(#state{ conn = Conn, busy_pid = Pid, busy_ref = Ref } = State) when is_pid(Pid), Conn =/= undefined ->
+    ok = epgsql:cancel(Conn),
+    State1 = demonitor_busy(State),
+    State1#state{
+        canceled_busy_ref = Ref
+    };
+cancel(#state{ conn = undefined } = State) ->
+    State.
+
+
+%% @doc Cancel any running query and close the connection to the SQL server
 disconnect(#state{ conn = undefined } = State) ->
     demonitor_busy(State);
-disconnect(#state{ conn = Conn } = State) ->
+disconnect(#state{ conn = Conn, busy_pid = Pid, busy_ref = Ref } = State) when is_pid(Pid) ->
+    ok = epgsql:cancel(Conn),
+    State1 = disconnect_1(State),
+    State1#state{
+        canceled_busy_ref = Ref
+    };
+disconnect(#state{ busy_pid = undefined } = State) ->
+    disconnect_1(State).
+
+disconnect_1(#state{ conn = Conn} = State) ->
     ok = epgsql:close(Conn),
     State1 = receive
         {'DOWN', _Ref, process, Conn, _Reason} ->
@@ -639,6 +764,9 @@ demonitor_busy(State) ->
     reset_busy_state(State).
 
 
+reset_busy_state(#state{ is_paused = true, pause_waiting = From } = State) when From =/= undefined ->
+    gen_server:reply(From, ok),
+    reset_busy_state(State#state{ pause_waiting = undefined });
 reset_busy_state(State) ->
     State#state{
         busy_monitor = undefined,
@@ -647,7 +775,8 @@ reset_busy_state(State) ->
         busy_timeout = undefined,
         busy_start = undefined,
         busy_sql = undefined,
-        busy_params = []
+        busy_params = [],
+        canceled_busy_ref = undefined
     }.
 
 %% @doc Calculate the remaining timeout for the running query.
@@ -694,15 +823,11 @@ connect(Args, RetryCt, MRef) ->
 % It is returning it, but the type spec in epgsql is wrong.
 -dialyzer({nowarn_function, connect_1/3}).
 connect_1(Args, RetryCt, MRef) ->
-    Hostname = get_arg(dbhost, Args),
-    Port = get_arg(dbport, Args),
-    Database = get_arg(dbdatabase, Args),
-    Username = get_arg(dbuser, Args),
-    Password = get_arg(dbpassword, Args),
-    Schema = get_arg(dbschema, Args),
     try
-        case epgsql:connect(Hostname, Username, Password,
-                           [{database, Database}, {port, Port}]) of
+        Database = get_arg(dbdatabase, Args),
+        Schema = get_arg(dbschema, Args),
+        Options = build_connect_options(Database, Args),
+        case epgsql:connect(Options) of
             {ok, Conn} ->
                 set_schema(Conn, Schema);
             {error, #error{ codename = too_many_connections }} ->
@@ -723,9 +848,7 @@ connect_1(Args, RetryCt, MRef) ->
                     in => zotonic_core,
                     database => Database,
                     schema => Schema,
-                    username => Username,
-                    hostname => Hostname,
-                    port => Port,
+                    options => Options,
                     result => error,
                     reason => Reason
                 }),
@@ -734,6 +857,24 @@ connect_1(Args, RetryCt, MRef) ->
     catch
         A:B ->
             retry(Args, {A, B}, RetryCt, MRef)
+    end.
+
+build_connect_options(DatabaseName, Args) ->
+    Opts = #{
+             database => DatabaseName,
+             codecs => [{z_db_pgsql_codec, []}],
+             nulls => [undefined, null, {term, undefined}, {term_json, undefined}]
+            },
+    maybe_put_args([{dbhost, host}, {dbport, port}, {dbuser, username}, {dbpassword, password}], Args, Opts).
+
+maybe_put_args([], _, Map) ->
+    Map;
+maybe_put_args([{ArgsKey, Key} | T], Args, Map) ->
+    case get_arg(ArgsKey, Args) of
+        undefined ->
+            maybe_put_args(T, Args, Map);
+        Value ->
+            maybe_put_args(T, Args, Map#{Key => Value})
     end.
 
 set_schema(Conn, Schema) ->
@@ -814,7 +955,7 @@ maybe_explain(_Duration, Sql, Params, Conn) ->
     case is_explainable(z_string:to_lower(Sql)) of
         true ->
             Sql1 = "explain "++Sql,
-            R = epgsql:equery(Conn, Sql1, encode_values(Params)),
+            R = epgsql:equery(Conn, Sql1, Params),
             maybe_log_query_plan(R);
         false ->
             ok
@@ -848,54 +989,3 @@ msec() ->
     {A, B, C} = os:timestamp(),
     A * 1000000000 + B * 1000 + C div 1000.
 
-%%
-%% These are conversion routines between how z_db expects values and how epgsl expects them.
-
-%% Notable differences:
-%% - Input values {term, ...} (use the ?DB_PROPS(...) macro!) are term_to_binary encoded and decoded
-%% - null <-> undefined
-%% - date/datetimes have a floating-point second argument in epgsql, in Zotonic they don't.
-
-encode_values(L) when is_list(L) ->
-    lists:map(fun encode_value/1, L).
-
-encode_value(undefined) ->
-    null;
-encode_value({term, undefined}) ->
-    null;
-encode_value({term, Term}) ->
-    B = term_to_binary(Term),
-    <<?TERM_MAGIC_NUMBER, B/binary>>;
-encode_value({term_json, undefined}) ->
-    null;
-encode_value({term_json, Term}) ->
-    jsxrecord:encode(Term);
-encode_value(Value) ->
-    Value.
-
-
-decode_reply({ok, Columns, Rows}) ->
-    {ok, Columns, lists:map(fun decode_values/1, Rows)};
-decode_reply({ok, Nr, Columns, Rows}) ->
-    {ok, Nr, Columns, lists:map(fun decode_values/1, Rows)};
-decode_reply(R) ->
-    R.
-
-decode_values(T) when is_tuple(T) ->
-    list_to_tuple(decode_values(tuple_to_list(T)));
-decode_values(L) when is_list(L) ->
-    lists:map(fun decode_value/1, L).
-
-decode_value({V}) ->
-    {decode_value(V)};
-
-decode_value(null) ->
-    undefined;
-decode_value(<<?TERM_MAGIC_NUMBER, B/binary>>) ->
-    binary_to_term(B);
-decode_value({H,M,S}) when is_float(S) ->
-    {H,M,trunc(S)};
-decode_value({{Y,Mm,D},{H,M,S}}) when is_float(S) ->
-    {{Y,Mm,D},{H,M,trunc(S)}};
-decode_value(V) ->
-    V.

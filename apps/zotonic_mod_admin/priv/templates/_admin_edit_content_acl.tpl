@@ -25,20 +25,20 @@
                         {_ Dependent _}
                     </label>
                 </div>
-                <div class="col-md-6 text-right">
+                <div class="col-md-6 text-right buttons">
                     {% if id.is_editable %}
                         {% button type="submit"
                                   id="save_duplicate"
-                                  class="btn btn-default btn"
+                                  class="btn btn-default"
                                   text=[_"Duplicate", "…"]
                                   title=_"Duplicate this page."
                         %}
                     {% else %}
-                        {% button class="btn btn-default btn"
+                        {% button class="btn btn-default"
                                   text=[_"Duplicate", "…"]
                                   action={dialog_duplicate_rsc id=id}
                                   title=_"Duplicate this page."
-                                  disabled=(not m.acl.insert[r.category.name])
+                                  disabled=(not m.acl.insert[id.category.name])
                         %}
                     {% endif %}
 

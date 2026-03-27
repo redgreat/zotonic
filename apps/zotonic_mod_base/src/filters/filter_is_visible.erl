@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'is_visible' filter, filters a list of ids or tuples {id, score}
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,41 @@
 %% limitations under the License.
 
 -module(filter_is_visible).
+-moduledoc("
+Filter a list of resource ids so that only the visible ids remain.
+
+This filter can be applied to a list of resource ids or a single resource id.
+
+This filter can be applied to a list of resource ids. Only those resource ids that are visible for the current user
+remain. Optionally the filter only returns the first n matches.
+
+An example:
+
+
+```django
+<ul>
+{% for part_id in m.rsc[id].o.haspart|is_visible %}
+    <li>{{ m.rsc[part_id].title }}</li>
+{% endfor %}
+</ul>
+```
+
+This will list all collection members that are visible, preventing empty list items.
+
+Whilst:
+
+
+```django
+{% for part_id in m.rsc[id].o.haspart|is_visible:3 %}
+    {{ m.rsc[part_id].title }}
+{% endfor %}
+```
+
+Lists only the first three collection members that are visible.
+
+See also
+
+[is_a](/id/doc_template_filter_filter_is_a), [is_not_a](/id/doc_template_filter_filter_is_not_a), [filter](/id/doc_template_filter_filter_filter)").
 -export([is_visible/2, is_visible/3]).
 
 

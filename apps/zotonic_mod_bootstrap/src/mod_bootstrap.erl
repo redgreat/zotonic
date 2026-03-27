@@ -1,8 +1,9 @@
 %% @author Andreas Stenius <git@astekk.se>
-%% @copyright 2012 Andreas Stenius
+%% @copyright 2012-2026 Andreas Stenius
 %% @doc Bootstrap provides simple and flexible HTML, CSS, and Javascript for popular user interface components and interactions.
+%% @end
 
-%% Copyright 2012 Andreas Stenius
+%% Copyright 2012-2026 Andreas Stenius
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(mod_bootstrap).
+-moduledoc("
+Adds support for the [Twitter Bootstrap](https://twitter.github.com/bootstrap/) CSS / JavaScript framework.
+Integration module for Bootstrap assets and helper templates/components.
+
+").
 -author("Andreas Stenius <git@astekk.se>").
 
 -mod_title("Bootstrap framework").

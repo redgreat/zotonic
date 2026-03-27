@@ -57,7 +57,6 @@
 %% @doc Generate a .po file from the given label/translation pairs
 %% The labels are {Label, Translation, Finfo}
 %% Author: Marc Worrell
-%% Date: 2010-05-19
 generate(Filename, Labels) ->
     {ok,Fd} = file:open(Filename, [write]),
     write_header(Fd),
@@ -65,18 +64,22 @@ generate(Filename, Labels) ->
     ok = file:close(Fd).
 
 write_entries(Fd, Labels) ->
-    LibDir = z_utils:lib_dir(),
-    F = fun({Id, Trans, Finfo}) ->
-            io:format(Fd, "~n#: ~s~n", [fmt_fileinfo(Finfo, LibDir)]),
-    		file:write(Fd, "msgid \"\"\n"),
-            write_pretty(unicode:characters_to_binary(Id), Fd),
-    		file:write(Fd, "msgstr \"\"\n"),
-    		write_pretty(unicode:characters_to_binary(Trans), Fd)
+    F = fun
+            ({Id, Trans, undefined}) ->
+                file:write(Fd, "\nmsgid \"\"\n"),
+                write_pretty(unicode:characters_to_binary(Id), Fd),
+                file:write(Fd, "msgstr \"\"\n"),
+                write_pretty(unicode:characters_to_binary(Trans), Fd);
+            ({Id, Trans, Finfo}) ->
+                io:format(Fd, "~s~n", [fmt_fileinfo(Finfo)]),
+        		file:write(Fd, "msgid \"\"\n"),
+                write_pretty(unicode:characters_to_binary(Id), Fd),
+        		file:write(Fd, "msgstr \"\"\n"),
+        		write_pretty(unicode:characters_to_binary(Trans), Fd)
     	end,
     lists:foreach(F, Labels).
 
 -define(ENDCOL, 72).
--define(PIVOT, 4).
 -define(SEP, <<" ">>).
 
 write_pretty(Binary, Fd) ->
@@ -113,14 +116,10 @@ wrap(Parts, Length) ->
             <<Acc/binary, " \"\n\"", Line/binary, "\"\n">>
     end.
 
-fmt_fileinfo(Finfo, LibDir) ->
+fmt_fileinfo(Finfo) ->
     F = fun({Fname0,LineNo}, Acc) ->
-        Fname = z_convert:to_list(Fname0),
-        Fname1 = case lists:prefix(LibDir, Fname) of
-                    true -> [$.|lists:nthtail(length(LibDir), Fname)];
-                    false -> Fname
-                 end,
-        iolist_to_binary([Fname1, ":", z_convert:to_binary(LineNo), Acc])
+        Fname1 = shorten_path(Fname0),
+        iolist_to_binary([["\n#: ", Fname1, ":", z_convert:to_binary(LineNo)], Acc])
 	end,
     lists:foldr(F,<<>>,Finfo).
 
@@ -146,6 +145,29 @@ write_header(Fd) ->
 	      "\"Content-Type: text/plain; charset=utf-8\\n\"\n"
 	      "\"Content-Transfer-Encoding: 8bit\\n\"\n").
 
+shorten_path(Path) ->
+    Parts = filename:split(Path),
+    Parts1 = [ unicode:characters_to_binary(P) || P <- Parts ],
+    Parts2 = case drop_till_module(Parts1) of
+        {ok, P1} -> P1;
+        error -> Parts1
+    end,
+    filename:join(Parts2).
+
+drop_till_module([]) -> error;
+drop_till_module([ <<"Users">>, _Username, <<"src">> | Rest ]) -> drop_till_module(Rest);
+drop_till_module([ <<"home">>, _Username, <<"src">> | Rest ]) -> drop_till_module(Rest);
+drop_till_module([ <<"apps">> | _ ] = Path) -> {ok, tl(Path)};
+drop_till_module([ <<"apps_user">> | _ ] = Path) -> {ok, tl(Path)};
+drop_till_module([ <<"zotonic_mod_", _/binary>> | _ ] = Path) -> {ok, Path};
+drop_till_module([ _Mod, <<"priv">> | _ ] = Path) -> {ok, Path};
+drop_till_module([ Mod, <<"src">> | Rest ] = Path) ->
+    % Prevent paths like "../<username>/src/..." to be matched as a module name.
+    case z_utils:ensure_existing_module(Mod) of
+        {ok, _} -> {ok, Path};
+        {error, _} -> drop_till_module(Rest)
+    end;
+drop_till_module([ _ | Path ]) -> drop_till_module(Path).
 
 %print_date() ->
 %    % 2003-10-21 16:45+0200

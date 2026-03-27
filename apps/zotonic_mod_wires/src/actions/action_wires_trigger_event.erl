@@ -2,6 +2,7 @@
 %% @copyright 2010 Marc Worrell
 %%
 %% @doc Trigger a name {% wire %} with an action.  All args will be args to the named wire.
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -18,6 +19,14 @@
 %% limitations under the License.
 
 -module(action_wires_trigger_event).
+-moduledoc("
+Trigger a named \\{% wire %\\} with an action. All args will be args to the named wire. The trigger’s `name` argument
+is the name of the wire.
+
+Todo
+
+Extend documentation
+").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_action/4]).
 

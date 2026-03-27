@@ -1,6 +1,7 @@
 %% @author Arjan Scherpenisse <arjan@scherpenisse.net>
 %% @copyright 2009 Arjan Scherpenisse
 %% @doc Add a media item to a resource.
+%% @end
 
 %% Copyright 2009 Arjan Scherpenisse
 %%
@@ -17,6 +18,13 @@
 %% limitations under the License.
 
 -module(action_admin_zmedia).
+-moduledoc("
+Used for triggering the insertion of a media item in the TinyMCE editor in the admin.
+
+Todo
+
+Extend documentation
+").
 -author("Arjan Scherpenisse <arjan@scherpenisse.net>").
 -include_lib("zotonic_core/include/zotonic.hrl").
 

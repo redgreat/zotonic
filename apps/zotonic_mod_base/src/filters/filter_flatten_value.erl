@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2020 Marc Worrell
 %% @doc Flatten a value to be used a string.
+%% @end
 
 %% Copyright 2020 Marc Worrell
 %%
@@ -17,6 +18,25 @@
 %% limitations under the License.
 
 -module(filter_flatten_value).
+-moduledoc("
+Flatten a list to a comma separated string.
+
+Example:
+
+
+```django
+{{ [ \"a\", 100, \"c\" ]|flatten_value }}
+```
+
+Gives:
+
+
+```django
+a,100,c
+```
+
+As list of only integers in the range 32..255 is assumed to be a string.
+").
 -export([
     flatten_value/2
     ]).

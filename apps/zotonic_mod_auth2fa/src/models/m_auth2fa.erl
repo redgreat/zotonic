@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2019-2024 Marc Worrell
+%% @copyright 2019-2026 Marc Worrell
 %% @doc Generate TOTP image data: urls and manage TOTP user secrets.
 %% @end
 
-%% Copyright 2019-2024 Marc Worrell
+%% Copyright 2019-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,28 @@
 %% limitations under the License.
 
 -module(m_auth2fa).
+-moduledoc("
+Model for two-factor authentication state and setup, including TOTP QR/image generation, mode checks, reset checks, and clock skew checks.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/new_totp_image_url` | Return the TOTP provisioning QR/image URL generated for the current authenticated user. No further lookups. |
+| `get` | `/new_totp_image_url/+currentcode` | Return the TOTP provisioning QR/image URL while validating against `+currentcode` from the setup flow. No further lookups. |
+| `get` | `/+user/is_totp_enabled/...` | Return whether user `+user` has a stored TOTP identity (`totp` identity record exists). |
+| `get` | `/is_totp_enabled/...` | Return whether the current authenticated user has TOTP enabled. |
+| `get` | `/is_totp_requested/...` | Return whether this session already requested/shown the TOTP challenge dialog. |
+| `get` | `/+user/is_allowed_reset/...` | Return whether the current user may reset 2FA for user `+user` (self or admin-identity edit rights). |
+| `get` | `/mode/...` | Return site-wide 2FA mode from `mod_auth2fa.mode` (`0=optional`, `1=ask`, `2=required`, `3=forced`). |
+| `get` | `/user_mode/...` | Return effective 2FA mode for the current user (site mode combined with ACL user-group `acl_2fa` settings). |
+| `get` | `/session_mode/...` | Return effective 2FA mode for the current session; only username/password and autologon-cookie sessions enforce user mode. |
+| `get` | `/clock_check` | Return clock skew report for payload timestamp (`delta`, `delta_abs`, `delta_acceptable`, `is_ok`). No further lookups. |
+| `get` | `/clock_check/+timestamp/...` | Return clock skew report for explicit `+timestamp` (`delta`, `delta_abs`, `delta_acceptable`, `is_ok`). |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 
 -behaviour(zotonic_model).
 
@@ -131,8 +153,10 @@ is_totp_requested(Context) ->
 
 %% @doc Check if the current user is allowed to reset the 2FA of the given user.
 -spec is_allowed_reset(UserId, Context) -> boolean() when
-    UserId :: m_rsc:resource_id() | undefined,
-    Context :: z:context().
+                        UserId :: m_rsc:resource_id(),
+                        Context :: z:context();
+                      (undefined, Context) -> false when
+                        Context :: z:context().
 is_allowed_reset(undefined, _Context) ->
     false;
 is_allowed_reset(1, Context) ->
@@ -209,17 +233,19 @@ user_mode(Context) ->
 user_group_mode(Context) ->
     case z_module_manager:active(mod_acl_user_groups, Context) of
         true ->
-            UGIds = m_acl_user_group:user_groups(Context),
-            Modes = lists:map(
-                fun(Id) ->
-                    case m_rsc:p_no_acl(Id, acl_2fa, Context) of
-                        undefined -> 0;
-                        <<>> -> 0;
-                        N -> z_convert:to_integer(N)
-                    end
-                end,
-                UGIds),
-            lists:max(Modes);
+            case m_acl_user_group:user_groups(Context) of
+                [] -> 0;
+                UGIds ->
+                    Modes = lists:map(
+                        fun(Id) ->
+                            case z_convert:to_integer(m_rsc:p_no_acl(Id, acl_2fa, Context)) of
+                                undefined -> 0;
+                                N -> N
+                            end
+                        end,
+                        UGIds),
+                    lists:max(Modes)
+            end;
         false ->
             0
     end.

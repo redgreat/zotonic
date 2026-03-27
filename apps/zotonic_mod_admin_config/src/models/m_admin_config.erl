@@ -1,8 +1,10 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2016 Marc Worrell
-%% @doc Model returning information about the available SSL certificates.
+%% @copyright 2016-2026 Marc Worrell
+%% @doc Model returning information about SSL certificates, security directory
+%% and available configurations.
+%% @end
 
-%% Copyright 2016 Marc Worrell
+%% Copyright 2016-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +19,21 @@
 %% limitations under the License.
 
 -module(m_admin_config).
+-moduledoc("
+Model for admin configuration views, including SSL certificate info, security directory info, and selected module config values.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/ssl_certificates/...` | Return discovered SSL certificate metadata for admin users; returns `[]` for non-admin requests. |
+| `get` | `/security_dir/...` | Return the resolved security directory path for admin users; returns empty binary for non-admin requests or lookup errors. |
+| `get` | `/configs/...` | Return collected admin-config entries (`mod_admin_config:collect_configs/1`) for admin users; returns `[]` for non-admin requests. |
+| `get` | `/config/+module/+key/...` | Return the config entry map matching module `+module` and key `+key` from collected admin-config entries, or `undefined` if not found (admin-only). |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 
 -behaviour(zotonic_model).
 
@@ -46,8 +63,45 @@ m_get([ <<"security_dir">> | Rest ], _Msg, Context) ->
         false ->
             {ok, {<<>>, Rest}}
     end;
+m_get([ <<"configs">> | Rest ], _Msg, Context) ->
+    case z_acl:is_admin(Context) of
+        true ->
+            {ok, {mod_admin_config:collect_configs(Context), Rest}};
+        false ->
+            {ok, {[], Rest}}
+    end;
+m_get([ <<"config">>, Module, Key | Rest ], _Msg, Context) ->
+    case z_acl:is_admin(Context) of
+        true ->
+            Configs = mod_admin_config:collect_configs(Context),
+            M1 = to_existing_atom(Module),
+            K1 = to_existing_atom(Key),
+            case lists:filter(
+                fun
+                    (#{ module := M, key := K }) when M =:= M1, K =:= K1 -> true;
+                    (_) -> false
+                end,
+                Configs)
+            of
+                [C|_] ->
+                    {ok, {C, Rest}};
+                [] ->
+                    {ok, {undefined, Rest}}
+            end;
+        false ->
+            {ok, {[], Rest}}
+    end;
 m_get(_Vs, _Msg, _Context) ->
     {error, unknown_path}.
+
+to_existing_atom(Atom) when is_atom(Atom) ->
+    Atom;
+to_existing_atom(Binary) when is_binary(Binary) ->
+    try
+        binary_to_existing_atom(Binary, utf8)
+    catch
+        _:_ -> undefined
+    end.
 
 ssl_certificates(Context) ->
     Observers = z_notifier:get_observers(ssl_options, Context),

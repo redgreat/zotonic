@@ -1,6 +1,5 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2024 Marc Worrell
-%%
+%% @copyright 2009-2025 Marc Worrell
 %% @doc Install Zotonic, loads the datamodel into the database
 %% Assumes the database has already been created (which normally needs superuser permissions anyway)
 %%
@@ -8,7 +7,7 @@
 %% CREATE LANGUAGE "plpgsql";
 %% @end
 
-%% Copyright 2009-2024 Marc Worrell
+%% Copyright 2009-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -36,6 +35,7 @@
 
          medium_log_table/0,
          medium_update_function/0,
+         medium_update_trigger_drop/0,
          medium_update_trigger/0,
 
          edge_log_table/0,
@@ -96,7 +96,7 @@ install_models(Context) ->
     Context :: z:context(),
     Sql :: [ string() | [ string() ] ].
 install_sql_list(Context, Model) ->
-    C = z_db_pgsql:get_raw_connection(Context),
+    {ok, C} = z_db_pgsql:get_raw_connection(Context),
     lists:foreach(
         fun
             ([ Q | _ ] = SqlList) when is_list(Q) ->
@@ -108,7 +108,8 @@ install_sql_list(Context, Model) ->
             (Sql) ->
                 {ok, [], []} = epgsql:squery(C, Sql)
         end,
-        Model).
+        Model),
+    ok = z_db_pgsql:release_raw_connection(Context).
 
 
 %% @doc Return a list containing the SQL statements to build the database model
@@ -157,7 +158,6 @@ model_pgsql() ->
       id serial NOT NULL,
       uri character varying(2048),
       name character varying(80),
-      page_path character varying(80),
       is_authoritative boolean NOT NULL DEFAULT true,
       is_published boolean NOT NULL DEFAULT false,
       is_featured boolean NOT NULL DEFAULT false,
@@ -180,6 +180,7 @@ model_pgsql() ->
 
       -- pivot fields for searching
       pivot_category_nr int,
+      pivot_page_path character varying(80)[],
       pivot_tsv tsvector,       -- texts
       pivot_rtsv tsvector,      -- related ids (cat, prop, rsc)
 
@@ -207,7 +208,6 @@ model_pgsql() ->
       CONSTRAINT rsc_pkey PRIMARY KEY (id),
       CONSTRAINT rsc_uri_key UNIQUE (uri),
       CONSTRAINT rsc_name_key UNIQUE (name),
-      CONSTRAINT rsc_page_path_key UNIQUE (page_path),
 
       CONSTRAINT fk_rsc_content_group_id FOREIGN KEY (content_group_id)
       REFERENCES rsc (id)
@@ -220,7 +220,6 @@ model_pgsql() ->
       CONSTRAINT fk_rsc_modifier_id FOREIGN KEY (modifier_id)
       REFERENCES rsc (id)
       ON UPDATE CASCADE ON DELETE SET NULL,
-
 
       CONSTRAINT fk_rsc_category_id FOREIGN KEY (category_id)
       REFERENCES rsc (id)
@@ -235,6 +234,8 @@ model_pgsql() ->
      "CREATE INDEX IF NOT EXISTS rsc_language_key ON rsc USING gin(language)",
      "CREATE INDEX IF NOT EXISTS rsc_pivot_tsv_key ON rsc USING gin(pivot_tsv)",
      "CREATE INDEX IF NOT EXISTS rsc_pivot_rtsv_key ON rsc USING gin(pivot_rtsv)",
+
+     "CREATE INDEX IF NOT EXISTS rsc_pivot_page_path_key ON rsc USING gin(pivot_page_path)",
 
      "CREATE INDEX IF NOT EXISTS rsc_pivot_category_nr ON rsc (pivot_category_nr)",
      "CREATE INDEX IF NOT EXISTS rsc_pivot_surname_key ON rsc (pivot_surname)",
@@ -390,7 +391,8 @@ model_pgsql() ->
       CONSTRAINT pk_auth_rsc_id FOREIGN KEY (rsc_id)
         REFERENCES rsc (id)
         ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT identity_verify_key_unique UNIQUE (verify_key)
+      CONSTRAINT identity_verify_key_unique UNIQUE (verify_key),
+      CONSTRAINT identity_rsc_id_type_key_unique UNIQUE (rsc_id, type, key)
     )",
 
     "CREATE INDEX IF NOT EXISTS fki_identity_rsc_id ON identity (rsc_id)",
@@ -460,27 +462,9 @@ model_pgsql() ->
 
     "CREATE INDEX IF NOT EXISTS medium_deleted_deleted_key ON medium_deleted (deleted)",
 
-    % Update/insert trigger on medium to fill the deleted files queue
-    "
-    CREATE OR REPLACE FUNCTION medium_delete() RETURNS trigger AS $$
-    begin
-        if (tg_op = 'DELETE') then
-            if (old.filename <> '' and old.filename is not null and old.is_deletable_file) then
-                insert into medium_deleted (filename) values (old.filename);
-            end if;
-            if (old.preview_filename <> '' and old.preview_filename is not null and old.is_deletable_preview) then
-                insert into medium_deleted (filename) values (old.preview_filename);
-            end if;
-        end if;
-        return null;
-    end;
-    $$ LANGUAGE plpgsql
-    ",
-    "DROP TRIGGER IF EXISTS medium_deleted_trigger ON medium",
-    "
-    CREATE TRIGGER medium_deleted_trigger AFTER DELETE
-    ON medium FOR EACH ROW EXECUTE PROCEDURE medium_delete()
-    ",
+    % Remove update/insert trigger on medium to fill the deleted files queue
+    % It is now integrated into the medium update function.
+    "DROP FUNCTION IF EXISTS medium_delete CASCADE",
 
     %% Table with hierarchies for menus and the category tree
     hierarchy_table(),
@@ -537,6 +521,7 @@ rsc_pivot_log_table() ->
         rsc_id int NOT NULL,
         due timestamp with time zone NOT NULL DEFAULT now(),
         is_update boolean NOT NULL default true,
+        priority int NOT NULL default 1,
 
         CONSTRAINT fk_rsc_pivot_log_rsc_id FOREIGN KEY (rsc_id)
           REFERENCES rsc(id)
@@ -547,7 +532,7 @@ rsc_pivot_log_index_1() ->
     "CREATE INDEX IF NOT EXISTS fki_rsc_pivot_log_rsc_id ON rsc_pivot_log (rsc_id)".
 
 rsc_pivot_log_index_2() ->
-    "CREATE INDEX IF NOT EXISTS rsc_pivot_log_update_due_key ON rsc_pivot_log (is_update, due)".
+    "CREATE INDEX IF NOT EXISTS rsc_pivot_log_update_priority_due_key ON rsc_pivot_log (priority, is_update, due)".
 
 rsc_pivot_log_function() ->
     % Update/insert trigger on rsc to fill the pivot log.
@@ -589,7 +574,7 @@ rsc_pivot_log_trigger_drop() ->
     "DROP TRIGGER IF EXISTS rsc_update_log_trigger ON RSC".
 
 rsc_pivot_log_trigger() ->
-    % CREATE OR REPLACE was added in psql 14 - for now we first drop the trigger.
+    % CREATE OR REPLACE TRIGGER was added in psql 14 - for now we first drop the trigger.
     "
     CREATE TRIGGER rsc_update_log_trigger AFTER INSERT OR UPDATE
     ON rsc FOR EACH ROW EXECUTE PROCEDURE rsc_pivot_log_insert()
@@ -666,30 +651,42 @@ medium_update_function() ->
     declare
         user_id integer;
     begin
-        select into user_id r.creator_id from rsc r where r.id = new.id;
         if (tg_op = 'INSERT') then
+            select into user_id r.creator_id from rsc r where r.id = new.id;
             if (new.filename <> '' and new.filename is not null and new.is_deletable_file) then
                 insert into medium_log (filename, usr_id)
-                values (new.filename, user_id);
+                values (new.filename, user_id)
+                on conflict (filename) do nothing;
             end if;
             if (new.preview_filename <> '' and new.preview_filename is not null and new.is_deletable_preview) then
                 insert into medium_log (filename, usr_id)
-                values (new.preview_filename, user_id);
+                values (new.preview_filename, user_id)
+                on conflict (filename) do nothing;
             end if;
         elseif (tg_op = 'UPDATE') then
+            select into user_id r.creator_id from rsc r where r.id = new.id;
             if (new.filename <> '' and new.filename is not null and new.is_deletable_file and new.filename != old.filename) then
                 insert into medium_log (filename, usr_id)
-                values (new.filename, user_id);
+                values (new.filename, user_id)
+                on conflict (filename) do nothing;
             end if;
             if (new.preview_filename <> '' and new.preview_filename is not null and new.is_deletable_preview and new.preview_filename != old.preview_filename) then
                 insert into medium_log (filename, usr_id)
-                values (new.preview_filename, user_id);
+                values (new.preview_filename, user_id)
+                on conflict (filename) do nothing;
             end if;
             -- Insert files into the medium_deleted queue table
             if (old.filename <> '' and old.filename is not null and old.is_deletable_file and new.filename != old.filename) then
                 insert into medium_deleted (filename) values (old.filename);
             end if;
             if (old.preview_filename <> '' and old.preview_filename is not null and old.is_deletable_preview and new.preview_filename != old.preview_filename) then
+                insert into medium_deleted (filename) values (old.preview_filename);
+            end if;
+        elseif (tg_op = 'DELETE') then
+            if (old.filename <> '' and old.filename is not null and old.is_deletable_file) then
+                insert into medium_deleted (filename) values (old.filename);
+            end if;
+            if (old.preview_filename <> '' and old.preview_filename is not null and old.is_deletable_preview) then
                 insert into medium_deleted (filename) values (old.preview_filename);
             end if;
         end if;
@@ -703,7 +700,7 @@ medium_update_trigger_drop() ->
 
 medium_update_trigger() ->
     "
-    CREATE TRIGGER medium_update_trigger AFTER INSERT OR UPDATE
+    CREATE TRIGGER medium_update_trigger AFTER INSERT OR UPDATE OR DELETE
     ON medium FOR EACH ROW EXECUTE PROCEDURE medium_update()
     ".
 

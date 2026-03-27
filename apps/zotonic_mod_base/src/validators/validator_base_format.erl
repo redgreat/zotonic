@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Validator for checking if an input value matches a regular expression
+%% @end
 
-%% Copyright 2009 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,42 @@
 %% limitations under the License.
 
 -module(validator_base_format).
+-moduledoc("
+Regular expression test.
+
+Checks if an input element’s value matches a regular expression. There is an optional `negate` argument to validate
+only when the regular expression does not match.
+
+For example, to test a dutch postal code:
+
+
+```django
+<input type=\"text\" id=\"postcode\" name=\"postcode\" value=\"\" />
+{% validate id=\"postcode\" type={format pattern=\"^[0-9][0-9][0-9][0-9] +[A-Za-z][A-Z][a-z]$\"} %}
+```
+
+Another example, no digits allowed:
+
+
+```django
+<input type=\"text\" id=\"nodigit\" name=\"nodigit\" value=\"\" />
+{% validate id=\"nodigit\" type={format pattern=\"[0-9]\" negate} %}
+```
+
+
+
+Arguments
+---------
+
+| Argument          | Description                                                                      | Example                              |
+| ----------------- | -------------------------------------------------------------------------------- | ------------------------------------ |
+| pattern           | The regular expression to match against.                                         | `pattern=\"[0-9][a-z]+\"`              |
+| negate            | Specify negate when you want to accept values that do not match the pattern.     | `negate`                             |
+| failure\\\\_message | Message to show when the input value does not match the pattern (or does match the pattern when the negate argument is given). Defaults to “Not valid.” | `failure_message=\"Invalid postcode\"` |
+
+See also
+
+[Forms and validation](/id/doc_developerguide_forms_and_validation#guide-validators)").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_validator/5, validate/5]).
 
@@ -28,7 +65,8 @@ render_validator(format, TriggerId, _TargetId, Args, _Context)  ->
     {{z_utils:is_true(Negate),Pattern}, Script}.
 
 
-%% @spec validate(Type, TriggerId, Value, Args, Context) -> {ok,AcceptedValue} | {error,Id,Error}
+-spec validate(term(), term(), term(), list(), z:context()) ->
+    {{ok, term()}, z:context()} | {{error, term(), term()}, z:context()}.
 %%          Error = invalid | novalue | {script, Script}
 validate(format, _Id, [], _, Context) ->
     {{ok, <<>>}, Context};

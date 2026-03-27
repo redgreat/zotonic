@@ -1,6 +1,7 @@
 %% @author Andreas Stenius <kaos@astekk.se>
 %% @copyright 2013 Andreas Stenius
 %% @doc Returns a list of tokens from input string, separated by the characters in the argument.
+%% @end
 
 %% Copyright 2013 Andreas Stenius
 %%
@@ -17,6 +18,20 @@
 %% limitations under the License.
 
 -module(filter_tokens).
+-moduledoc("
+Returns a list of tokens from input string, separated by the characters in the filter argument.
+
+This is filter maps directly onto the `string:tokens/2` function in `stdlib` from the Erlang/OTP distribution.
+
+Example:
+
+
+```django
+{{ \"abc defxxghix jkl\"|tokens:\"x \" }}
+```
+
+Will give the list of tokens: `[\"abc\", \"def\", \"ghi\", \"jkl\"]`.
+").
 -export([tokens/3]).
 
 

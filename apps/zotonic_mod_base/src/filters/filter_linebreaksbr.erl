@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2012 Marc Worrell
 %% @doc 'linebreaksbr' filter, translate linebreaks into <br/> elements
+%% @end
 
 %% Copyright 2012 Marc Worrell
 %%
@@ -17,6 +18,21 @@
 %% limitations under the License.
 
 -module(filter_linebreaksbr).
+-moduledoc("
+Translate ASCII newlines (`\\n`) into HTML `<br /\\>` elements.
+
+The following string:
+
+
+```django
+{{ \"foo\\nbar\"|linebreaksbr }}
+```
+
+will evaluate to `foo<br /\\>bar`.
+
+See also
+
+[brlinebreaks](/id/doc_template_filter_filter_brlinebreaks)").
 -export([linebreaksbr/2]).
 
 linebreaksbr(S, Context) ->

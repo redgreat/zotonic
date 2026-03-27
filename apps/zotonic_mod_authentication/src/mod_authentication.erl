@@ -18,6 +18,94 @@
 %% limitations under the License.
 
 -module(mod_authentication).
+-moduledoc("
+This module contains the main Zotonic authentication mechanism. It contains the logon and logoff controllers, and
+implements the various hooks as described in the [Access control](/id/doc_developerguide_access_control#guide-auth) manual.
+
+Configuration keys:
+
+mod_authentication.password_min_length
+
+The minimumum length of passwords. Defaults to 8, set this to an integer value.
+
+mod_authentication.is_rememberme
+
+Set this to `1` to check the *remember me* checkbox per default
+
+mod_authentication.is_one_step_logon
+
+Normally a two-step logon is used, first the username is requested, then the password is requested. In between the
+server checks the username and is able to show alternative authentication methods based on the username. Set this to `1`
+to show the username and password field at once, and disable the display of alternative authentication methods.
+
+mod_authentication.is_signup_confirm
+
+Set to `1` to force user confirmation of new accounts. This is useful when using 3rd party authentication services. If a
+new identity is found then a new account is automatically added. With this option set the user will be asked if they
+want to make a new account. This prevents duplicate accounts when using multiple authentication methods.
+
+mod_authentication.reset_token_maxage
+
+The maximum age of the emailed reset token in seconds. Defaults to 48 hours (172800 seconds). This must be an integer value.
+
+mod_authentication.email_reminder_if_nomatch
+
+On the password reset form, a user can enter their email address for receiving an email to reset their password. If a
+user enters an email address that is not connected to an active account then we do not send an email. If this option is
+set to `1` then an email is sent. This prevents the user waiting for an email, but enables sending emails to arbitrary addresses.
+
+mod_authentication.auth_secret
+
+The secret used to sign authentication cookies. This secret is automatically generated. Changing this secret will
+invalidate all authentication cookies.
+
+mod_authentication.auth_anon_secret
+
+The secret to sign authentication cookies for the anonymous user. This secret is automatically generated. Changing this
+secret will invalidate all authentication cookies for anonymous users.
+
+mod_authentication.auth_user_secret
+
+The secret to sign authentication cookies for the identified users if there is no database to store individual secrets.
+
+mod_authentication.auth_autologon_secret
+
+The secret to sign *remember me* cookies. This secret is automatically generated. Changing this secret will invalidate
+all *remember me* cookies for all users.
+
+Related configurations:
+
+site.password_force_different
+
+Set to `1` to force a user picking a different password if they reset their password.
+
+site.ip_allowlist
+
+If the admin password is set to `admin` then logon is only allowed from local IP addresses. This configuration overrules
+the `ip_allowlist` global configuration and enables other IP addresses to login as `admin` if the password is set to `admin`.
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_admin_menu`: Contribute module entries to the admin menu tree.
+- `observe_auth_client_logon_user`: Send a request to the client to login a user using `z_context:client_topic`.
+- `observe_auth_client_switch_user`: Send a request to the client to switch users using `z_acl:sudo_user`.
+- `observe_auth_options_update`: Merge allowed external-auth options into the logon context for templates and handlers.
+- `observe_auth_validated`: Match validated external identities to local users and trigger signup or logon continuation.
+- `observe_logon_options`: Normalize and enrich logon options before authentication starts.
+- `observe_logon_submit`: Check username/password against the identity tables using `m_identity:check_username_pw`.
+- `observe_m_config_update`: Flush the `auth_secret` depcache key when `mod_authentication.auth_secret` changes, and flush the `auth_anon_secret` depcache key when `mod_authentication.auth_anon_secret` changes.
+- `observe_request_context`: Check for authentication cookies in the request using `z_context:get`.
+- `observe_tick_1h`: Remove stale authentication and logon-history records in hourly maintenance.
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `close_all_sessions`.
+- `event/2` with `submit` messages: `signup_confirm`.
+
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Authentication").
@@ -25,6 +113,92 @@
 -mod_prio(500).
 -mod_depends([base, acl]).
 -mod_provides([authentication]).
+-mod_config([
+        #{
+            key => password_min_length,
+            type => integer,
+            default => 8,
+            description => "The minimum length of new passwords."
+        },
+        #{
+            key => is_signup_confirm,
+            type => boolean,
+            default => true,
+            description => "If true, users will have to confirm their signup by clicking on a link in an email."
+        },
+        #{
+            key => reset_token_max_age,
+            type => integer,
+            default => 172_800,
+            description => "The maximum age of a password reset token in seconds. Default is 2 days (172800 seconds)."
+        },
+        #{
+            key => is_one_step_logon,
+            type => boolean,
+            default => false,
+            description => "If true, the user must enter both their username and password at once. Otherwise they are entered one by one, "
+                           "which helps checking other (external) login options."
+        },
+        #{
+            key => is_rememberme,
+            type => boolean,
+            default => false,
+            description => "If true, the 'remember me' option on the login form will be pre-checked. This will set a cookie that will "
+                           "automatically log them in when they return to the site."
+        },
+        #{
+            key => email_reminder_if_nomatch,
+            type => boolean,
+            default => false,
+            description => "If true, on a password reset with a unregistered email address, an email is sent to that address with "
+                           "the message that it is unknown."
+        },
+        #{
+            key => password_disable_leak_check,
+            type => boolean,
+            default => false,
+            description => "If true, the password leak check with haveibeenpwned.com is disabled. This is useful for testing purposes, "
+                           "but must not be used in production."
+        },
+        #{
+            key => site_auth_key,
+            type => string,
+            default => "",
+            description => "The site authentication key is used to encrypt the tokens that can be exchanged for a valid authentication cookie or "
+                           "MQTT login. It is automatically set, and must be a random string that is kept secret."
+        },
+        #{
+            key => auth_secret,
+            type => string,
+            default => "",
+            description => "The site authentication secret is used to encrypt the authentication cookies. "
+                           "This key is used for sites without database connections, if there is a database connection then every user will "
+                           "receive their own key. It is automatically set, and must be a random string that is kept secret."
+        },
+        #{
+            key => auth_user_secret,
+            type => string,
+            default => "",
+            description => "The authentication user secret is placed in the encrypted authentication cookies. "
+                           "This secret is used for sites without database connections, if there is a database connection then every user will "
+                           "receive their own secret. It is automatically set, and must be a random string that is kept secret."
+        },
+        #{
+            key => auth_anon_secret,
+            type => string,
+            default => "",
+            description => "The authentication secret for anonymous users is placed in the encrypted authentication cookies. "
+                           "This is used to authenticate anonymous users only, the auth_user_secret is used for authenticated users. "
+                           "It is automatically set, and must be a random string that is kept secret."
+        },
+        #{
+            key => auth_autologon_secret,
+            type => string,
+            default => "",
+            description => "The secret used to sign the autologon cookie for automatic authentication of users that checked 'remember me'. "
+                           "It is automatically set, and must be a random string that is kept secret."
+        }
+    ]).
 
 %% gen_server exports
 -export([
@@ -39,7 +213,8 @@
     observe_auth_validated/2,
     observe_auth_client_logon_user/2,
     observe_auth_client_switch_user/2,
-    observe_tick_1h/2
+    observe_tick_1h/2,
+    observe_m_config_update/2
 ]).
 
 -include_lib("zotonic_core/include/zotonic.hrl").
@@ -136,6 +311,12 @@ observe_auth_options_update(#auth_options_update{ request_options = ROpts }, Acc
 %% @doc Check username/password against the identity tables.
 observe_logon_submit(#logon_submit{
             payload = #{
+                <<"is_username_check">> := true
+            }
+        }, _Context) ->
+    undefined;
+observe_logon_submit(#logon_submit{
+            payload = #{
                 <<"username">> := Username,
                 <<"password">> := Password
             } = Payload
@@ -163,11 +344,25 @@ observe_logon_submit(#logon_submit{}, _Context) ->
 observe_logon_options(#logon_options{
             payload = #{
                 <<"username">> := Username,
+                <<"is_username_check">> := true
+            }
+        },
+        Acc,
+        Context) when is_binary(Username) ->
+    check_username(Username, Acc, Context);
+observe_logon_options(#logon_options{
+            payload = #{
+                <<"username">> := Username,
                 <<"password">> := undefined
             }
         },
         Acc,
         Context) when is_binary(Username) ->
+    check_username(Username, Acc, Context);
+observe_logon_options(#logon_options{}, Acc, _Context) ->
+    Acc.
+
+check_username(Username, Acc, Context) ->
     case z_string:to_lower( z_string:trim( Username ) ) of
         <<>> ->
             Acc;
@@ -180,10 +375,7 @@ observe_logon_options(#logon_options{
                 is_user_local => IsUserLocal,
                 username => UsernameOrEmail
             }
-    end;
-observe_logon_options(#logon_options{}, Acc, _Context) ->
-    Acc.
-
+    end.
 
 %% @doc Send a request to the client to login a user. The zotonic.auth.worker.js will
 %% send a request to controller_authentication to exchange the one time token with
@@ -211,13 +403,16 @@ observe_auth_client_logon_user(#auth_client_logon_user{ user_id = UserId, url = 
 %% @doc Send a request to the client to switch users. The zotonic.auth.worker.js will
 %% send a request to controller_authentication to perform the switch.
 observe_auth_client_switch_user(#auth_client_switch_user{ user_id = UserId }, Context) ->
-    CurrentUser = z_acl:user(Context),
+    CurrentUser = z_acl:sudo_user(Context),
     case UserId of
         1 when CurrentUser =/= 1 ->
             % Only the admin is allowed to switch back to admin
             {error, eacces};
         _ ->
-            case z_acl:is_admin(Context) of
+            case z_acl:is_admin(Context)
+                orelse z_acl:sudo_user(Context) =:= UserId
+                orelse z_acl:is_allowed(sudo_user, UserId, Context)
+            of
                 true ->
                     case z_context:client_topic(Context) of
                         {ok, ClientTopic} ->
@@ -363,10 +558,8 @@ maybe_update_identity(_OldProps, _NewProps, [], _Context) ->
     % no identity
     ok;
 maybe_update_identity(_OldProps, NewProps, IdnPs, Context) ->
-    {key, Key} = proplists:lookup(key, IdnPs),
-    {type, Type} = proplists:lookup(type, IdnPs),
-    {rsc_id, UserId} = proplists:lookup(rsc_id, IdnPs),
-    m_identity:set_by_type(UserId, Type, Key, NewProps, Context).
+    {id, IdnId} = proplists:lookup(id, IdnPs),
+    m_identity:set_propb(IdnId, NewProps, Context).
 
 maybe_signup(Auth, Context) ->
     case auth_match_primary_email(Auth, Context) of
@@ -516,3 +709,10 @@ auth_identity(#auth_validated{service=Service, service_uid=Uid}, Context) ->
 
 observe_tick_1h(tick_1h, Context) ->
     m_identity:cleanup_logon_history(Context).
+
+observe_m_config_update(#m_config_update{module=mod_authentication, key=auth_secret}, Context) ->
+    z_depcache:flush(auth_secret, Context);
+observe_m_config_update(#m_config_update{module=mod_authentication, key=auth_anon_secret}, Context) ->
+    z_depcache:flush(auth_anon_secret, Context);
+observe_m_config_update(#m_config_update{}, _Context) ->
+    ok.

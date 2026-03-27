@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'split_in' filter, split a list in a number of rows
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,24 @@
 %% limitations under the License.
 
 -module(filter_split_in).
+-moduledoc("
+This filter split a list in shorter lists. It splits an array in N sub-arrays of more or less equal length. This is
+useful when displaying a list of items in columns.
+
+For example:
+
+
+```django
+{% with [1,2,3,4,5,6]|split_in:3 as a,b,c %}
+    {% for n in a %}{{ n|format_number }} {% endfor %}
+{% endwith %}
+```
+
+This displays `1 4`. The variable b will be `[2,5]` and the variable c will be `[3,6]`.
+
+See also
+
+[chunk](/id/doc_template_filter_filter_chunk), [vsplit_in](/id/doc_template_filter_filter_vsplit_in)").
 -export([split_in/3]).
 
 

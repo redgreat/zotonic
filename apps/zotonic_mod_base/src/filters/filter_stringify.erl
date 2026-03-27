@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2013 Marc Worrell
 %% @doc Convert a value to a binary string.
+%% @end
 
 %% Copyright 2013 Marc Worrell
 %%
@@ -17,6 +18,22 @@
 %% limitations under the License.
 
 -module(filter_stringify).
+-moduledoc("
+Translates atoms, integers and floats to strings. The undefined value is translated to the empty string. Does not
+translate tuples.
+
+For example:
+
+
+```django
+{{ value|stringify }}
+```
+
+When value is undefined then the output will be “”.
+
+See also
+
+[slugify](/id/doc_template_filter_filter_slugify), [to_binary](/id/doc_template_filter_filter_to_binary)").
 -export([stringify/2]).
 
 -include_lib("zotonic_core/include/zotonic.hrl").

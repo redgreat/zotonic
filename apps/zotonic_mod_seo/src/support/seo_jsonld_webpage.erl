@@ -1,10 +1,10 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2023 Marc Worrell
+%% @copyright 2023-2026 Marc Worrell
 %% @doc Generate the JSON-LD for a webpage.
 %% The type of the generated JSON-LD is https://schema.org/WebPage
 %% @end
 
-%% Copyright 2023 Marc Worrell
+%% Copyright 2023-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@
 -export([
     generate/2
     ]).
+
+-include_lib("zotonic_core/include/zotonic.hrl").
 
 %% @doc Generate the JSON-LD map for webpage view of the given resource.
 -spec generate(Id, Context) -> {ok, JSON} | {error, Reason} when
@@ -50,8 +52,6 @@ generate(Id, Context) ->
 
 generate_1(Id, Context) ->
     CustomJSON = case z_trans:lookup_fallback(m_rsc:p(Id, <<"seo_ld_json">>, Context), Context) of
-        undefined ->
-            #{};
         <<>> ->
             #{};
         SeoJSON ->
@@ -87,7 +87,6 @@ generate_2(Id, CustomJSON, Context) ->
             OrgUrl
     end,
     OrgTitle = case title(site_organization, Context) of
-        undefined -> SiteTitle;
         <<>> -> SiteTitle;
         OrgT -> OrgT
     end,
@@ -236,7 +235,7 @@ make_breadcrumb(Ids, Context) ->
     }.
 
 make_item(Id, Context) ->
-    AbsUrl = m_rsc:p(Id, page_url_abs, Context),
+    AbsUrl = m_rsc:p(Id, <<"page_url_abs">>, Context),
     #{
         <<"@type">> => <<"schema:WebPage">>,
         <<"@id">> => AbsUrl,
@@ -264,17 +263,32 @@ first([Id|Ids], Fun, Context) ->
     end.
 
 url_nolang(Id, Context) ->
-    m_rsc:p(Id, page_url_abs, z_context:set_language('x-default', Context)).
+    m_rsc:p(Id, <<"page_url_abs">>, z_context:set_language('x-default', Context)).
 
 
 title(Id, Context) ->
     SeoTitle = z_trans:lookup_fallback(m_rsc:p(Id, <<"seo_title">>, Context), Context),
     case z_utils:is_empty(SeoTitle) of
         true ->
-            z_trans:lookup_fallback(m_rsc:p(Id, <<"title">>, Context), Context);
+            Title = non_empty(m_rsc:p(Id, <<"title">>, Context)),
+            case z_trans:lookup_fallback(Title, Context) of
+                Empty when Empty =:= <<>>; Empty =:= undefined ->
+                    z_trans:trans(<<"Untitled">>, Context);
+                T ->
+                    T
+            end;
         false ->
             SeoTitle
     end.
+
+non_empty(#trans{ tr = Tr }) ->
+    Tr1 = [ Trans || Trans = {_Iso, Text} <- Tr, Text =/= <<>> ],
+    #trans{ tr = Tr1 };
+non_empty(undefined) ->
+    <<>>;
+non_empty(Text) ->
+    Text.
+
 
 description(Id, Context) ->
     SeoDesc = z_trans:lookup_fallback(m_rsc:p(Id, <<"seo_desc">>, Context), Context),
@@ -285,7 +299,6 @@ description(Id, Context) ->
             SeoDesc
     end,
     case Desc of
-        undefined -> undefined;
         <<>> -> <<>>;
         _ -> filter_brlinebreaks:brlinebreaks(Desc, Context)
     end.

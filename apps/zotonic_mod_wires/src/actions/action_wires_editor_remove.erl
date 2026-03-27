@@ -1,7 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
-%% Date: 2010-11-22
 %% @doc Add WYSIWYG editor controls to all textarea.z_editor in the target
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -18,6 +18,13 @@
 %% limitations under the License.
 
 -module(action_wires_editor_remove).
+-moduledoc("
+Remove any WYSIWYG editor controls from all textarea’s with the `z_editor` class in the target.
+
+Todo
+
+Extend documentation
+").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([
     render_action/4

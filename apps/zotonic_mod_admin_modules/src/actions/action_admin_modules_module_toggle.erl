@@ -1,7 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2009 Marc Worrell
-%% Date: 2009-06-11
 %% @doc Activate/dactivate a module
+%% @end
 
 %% Copyright 2009 Marc Worrell
 %%
@@ -18,6 +18,13 @@
 %% limitations under the License.
 
 -module(action_admin_modules_module_toggle).
+-moduledoc("
+Activate/deactivate a module in the module manager in the admin interface.
+
+Todo
+
+Extend documentation
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 %% interface functions

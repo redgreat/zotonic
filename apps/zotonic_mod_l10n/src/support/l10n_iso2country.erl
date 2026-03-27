@@ -4,7 +4,22 @@
 
 %% @author Marc Worrell <marc@worrell.nl>
 %% @doc Mapping of iso code to country name in english
-%% @copyright 2011-2022 Marc Worrell
+%% @copyright 2011-2025 Marc Worrell
+%% @end
+
+%% Copyright 2011-2025 Marc Worrell
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 
 -module(l10n_iso2country).
 
@@ -12,17 +27,41 @@
 
 -export([
     iso2country/0,
-    iso2country/1
+    iso2country/1,
+    iso2country/2
 ]).
 
 
+%% @doc Given a country's ISO code, return the English name
+%% of the country. If the ISO code is unknown then 'undefined'
+%% is returned.
+-spec iso2country(Iso) -> Country | undefined when
+	Iso :: binary(),
+	Country :: binary().
 iso2country(Iso) ->
     case lists:keyfind(Iso, 1, iso2country()) of
         {_, Name} -> Name;
         false -> undefined
     end.
 
+%% @doc Given a country's ISO code, return the localized name
+%% of the country. If the ISO code is unknown then 'undefined'
+%% is returned. The language preferences of the context are
+%% used to find the best matching translation.
+-spec iso2country(Iso, Context) -> Country | undefined when
+	Iso :: binary(),
+	Context :: z:context(),
+	Country :: binary().
+iso2country(Iso, Context) ->
+	case iso2country(Iso) of
+		undefined -> undefined;
+		Country -> z_trans:trans(Country, Context)
+	end.
 
+%% @doc Return the list of all ISO-code / country associations.
+-spec iso2country() -> [ {Iso, Country} ] when
+	Iso :: binary(),
+	Country :: binary().
 iso2country() -> [
 	{<<"af">>, <<"Afghanistan"/utf8>>},
 	{<<"al">>, <<"Albania"/utf8>>},
@@ -95,7 +134,7 @@ iso2country() -> [
 	{<<"er">>, <<"Eritrea"/utf8>>},
 	{<<"ee">>, <<"Estonia"/utf8>>},
 	{<<"et">>, <<"Ethiopia"/utf8>>},
-	{<<"fk">>, <<"Falkland Islands"/utf8>>},
+	{<<"fk">>, <<"Falkland Islands (Malvinas)"/utf8>>},
 	{<<"fo">>, <<"Faroe Islands"/utf8>>},
 	{<<"fj">>, <<"Fiji"/utf8>>},
 	{<<"fi">>, <<"Finland"/utf8>>},
@@ -119,6 +158,7 @@ iso2country() -> [
 	{<<"gn">>, <<"Guinea"/utf8>>},
 	{<<"gw">>, <<"Guinea Bissau"/utf8>>},
 	{<<"gy">>, <<"Guyana"/utf8>>},
+	{<<"gz">>, <<"Gaza Strip Administered by Israel"/utf8>>},
 	{<<"ht">>, <<"Haiti"/utf8>>},
 	{<<"hm">>, <<"Heard and McDonald Islands"/utf8>>},
 	{<<"va">>, <<"Holy See (Vatican City State)"/utf8>>},
@@ -269,6 +309,7 @@ iso2country() -> [
 	{<<"vn">>, <<"Vietnam"/utf8>>},
 	{<<"vg">>, <<"Virgin Islands (British)"/utf8>>},
 	{<<"vi">>, <<"Virgin Islands (USA)"/utf8>>},
+	{<<"we">>, <<"West Bank Administered by Israel"/utf8>>},
 	{<<"wf">>, <<"Wallis and Futuna Islands"/utf8>>},
 	{<<"eh">>, <<"Western Sahara"/utf8>>},
 	{<<"ye">>, <<"Yemen"/utf8>>},

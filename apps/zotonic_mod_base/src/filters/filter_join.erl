@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'join' filter, join the values of a list, with an optional separator.
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,38 @@
 %% limitations under the License.
 
 -module(filter_join).
+-moduledoc("
+Joins the elements of a list. Joins the elements of the input list together, separated by the argument.
+
+For example:
+
+
+```django
+{{ value|join:\", \" }}
+```
+
+If the value is the list `[\"hello\", \"world\"]` then the output will be `\"hello, world\"`.
+
+It is possible to use a special separator between the last two elements of the list, for the list `[ \"Jan\", \"Piet\",
+\"Klaas\" ]` the following example:
+
+
+```django
+{{ list|join:\", \":_\"or\" }} }}
+```
+
+Gives as result:
+
+
+```django
+Jan, Piet or Klaas
+```
+
+The spaces around the last separator are added by the filter.
+
+See also
+
+[element](/id/doc_template_filter_filter_element), [tail](/id/doc_template_filter_filter_tail), [split](/id/doc_template_filter_filter_split)").
 -export([join/2, join/3, join/4]).
 
 

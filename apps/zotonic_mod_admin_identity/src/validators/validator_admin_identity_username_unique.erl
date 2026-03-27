@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2010-2017 Marc Worrell
+%% @copyright 2010-2026 Marc Worrell
 %% @doc Check if an entered username is unique
+%% @end
 
-%% Copyright 2010-2017 Marc Worrell
+%% Copyright 2010-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,22 @@
 %% limitations under the License.
 
 -module(validator_admin_identity_username_unique).
+-moduledoc("
+Check if an entered username is unique, by looking in the [m_identity](/id/doc_model_model_identity) table for the
+given username:
+
+
+```django
+<input type=\"text\" id=\"username\" name=\"username\" value=\"\" />
+{% validate id=\"username\" type={username_unique} %}
+```
+
+Optionally, an `id` parameter can be given to the validator to skip that particular id when doing the uniqueness check.
+This is useful when you are displaying a form in which the user is editing his own user name.
+
+See also
+
+[m_identity](/id/doc_model_model_identity), [email_unique](/id/doc_template_validator_validator_email_unique), [Forms and validation](/id/doc_developerguide_forms_and_validation#guide-validators)").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([
     render_validator/5,
@@ -30,7 +47,8 @@ render_validator(username_unique, TriggerId, TargetId, Args, Context)  ->
     Script = [<<"z_add_validator(\"">>,TriggerId,<<"\", \"postback\", ">>, JsObject, <<");\n">>],
     {Args, Script}.
 
-%% @spec validate(Type, TriggerId, Value, Args, Context) -> {{ok,AcceptedValue}, NewContext} | {{error,Id,Error}, NewContext}
+-spec validate(term(), term(), term(), list(), z:context()) ->
+    {{ok, term()}, z:context()} | {{error, term(), term()}, z:context()}.
 %%          Error = invalid | novalue | {script, Script} | novalidator | string()
 validate(username_unique, Id, Value, Args, Context) ->
     Username = z_string:trim(Value),
@@ -56,7 +74,7 @@ is_username_unique(Username, Args, Context) ->
             false
     end.
 
-%% @spec event(Event, Context) -> Context
+-spec event(term(), z:context()) -> z:context().
 %% @doc Handle the validation during form entry. Hides/shows the message element with id: TriggerId + "_username_unique_error" (if present).
 event(#postback{message={validate, Args}, trigger=TriggerId}, Context) ->
     Value = z_context:get_q(triggervalue, Context),

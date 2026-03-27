@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2009 Marc Worrell
 %% @doc Enable an element.  Removes the 'disabled' attribute and removes the class 'disabled'.
+%% @end
 
 %% Copyright 2009 Marc Worrell
 %%
@@ -17,6 +18,27 @@
 %% limitations under the License.
 
 -module(action_wires_enable).
+-moduledoc("
+Resets the “disabled” attribute of a HTML tag and removes the CSS class “disabled”.
+
+Example:
+
+
+```django
+<input id=\"myid\" disabled=\"disabled\" class=\"disabled\" type=\"text\" value=\"hello\" />
+{% button text=\"enable\" action={enable target=\"myid\"} %}
+```
+
+After clicking the button the input will be:
+
+
+```django
+<input id=\"myid\" class=\"\" type=\"text\" value=\"hello\" />
+```
+
+See also
+
+action [disable](/id/doc_template_action_action_disable).").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_action/4]).
 

@@ -18,6 +18,30 @@
 %% limitations under the License.
 
 -module(filter_url_abs).
+-moduledoc("
+Generates an absolute URL for the given dispatch information.
+
+An *absolute URL* is an URL that includes the protcol and hostname. For example `https://example.com/foo/bar`.
+
+For example, generate a url for the dispatch rule `home` with an extra argument `hello`:
+
+
+```django
+{{ {home hello=\"world\"}|url_abs }}
+```
+
+This is similar to:
+
+
+```django
+{% url_abs home hello=\"world\" %}
+```
+
+Difference between the tag and the filter is that the filter can be used in expressions or with passed values.
+
+See also
+
+[url](/id/doc_template_filter_filter_url), [url](/id/doc_template_tag_tag_url), [sanitize_url](/id/doc_template_filter_filter_sanitize_url), [is_site_url](/id/doc_template_filter_filter_is_site_url), [urlencode](/id/doc_template_filter_filter_urlencode)").
 -export([url_abs/2]).
 
 url_abs(undefined, _Context) ->

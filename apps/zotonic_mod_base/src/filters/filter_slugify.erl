@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'slugify' filter, translate a string to a slug
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,23 @@
 %% limitations under the License.
 
 -module(filter_slugify).
+-moduledoc("
+Converts a text into a slug.
+
+Makes the value safe for use as a part in an url. Mostly used for adding titles or descriptions to an url.
+
+For example:
+
+
+```django
+{{ value|slugify }}
+```
+
+When value is “Nichts is unmöglich!” then the output will be “nichts-is-unmoglich”.
+
+See also
+
+[stringify](/id/doc_template_filter_filter_stringify)").
 -export([slugify/2]).
 
 

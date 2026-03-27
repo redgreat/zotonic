@@ -1,6 +1,7 @@
 %% @author Marc Worrell
 %% @copyright 2020 Marc Worrell
 %% @doc 'format_duration' filter, show a duration in seconds as readable text.
+%% @end
 
 %% Copyright 2020 Marc Worrell
 %%
@@ -17,6 +18,32 @@
 %% limitations under the License.
 
 -module(filter_format_duration).
+-moduledoc("
+Show a duration in hours, minutes and seconds.
+
+Takes as input a number representing a number of seconds. Outputs a human readable form.
+
+For example:
+
+
+```django
+{{ 123|format_duration }}
+```
+
+Will ouput `2m3s`.
+
+And:
+
+
+```django
+{{ 3601|format_duration }}
+```
+
+Will ouput `1h0m1s`.
+
+See also
+
+[format_number](/id/doc_template_filter_filter_format_number), [format_integer](/id/doc_template_filter_filter_format_integer), [format_price](/id/doc_template_filter_filter_format_price)").
 -export([format_duration/2]).
 
 

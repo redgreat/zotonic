@@ -7,7 +7,7 @@
 
 {% block links %}
     {% if id and id.is_a.query and q.page %}
-        <link rel="canonical" href="{% block canonical %}{{ id.page_url_abs }}{% endblock %}?page={{ q.page|escape }}">
+        <link rel="canonical" href="{{ id.page_url_abs }}?page={{ q.page|escape }}">
     {% elseif id %}
         {% with z_seo_language as z_language %}
         <link rel="canonical" href="{% block canonical %}{{ id.page_url_abs }}{% endblock %}">
@@ -90,15 +90,15 @@
 {% endblock %}
 
 {% block verification %}
-    {% if m.seo.bing.webmaster_verify as wmv %}
-        <meta name="msvalidate.01" content="{{ wmv }}">
-    {% endif %}
-    {% if m.seo.google.webmaster_verify as wmv %}
-        <meta name="google-site-verification" content="{{ wmv }}">
-    {% endif %}
-    {% if m.seo.yandex.webmaster_verify as wmv %}
-        <meta name="yandex-verification" content="{{ wmv }}">
-    {% endif %}
+    {% for wmv in m.seo.bing.webmaster_verify|split:"," %}
+        {% if wmv|trim as wmv %}<meta name="msvalidate.01" content="{{ wmv }}">{% endif %}
+    {% endfor %}
+    {% for wmv in m.seo.google.webmaster_verify|split:"," %}
+        {% if wmv|trim as wmv %}<meta name="google-site-verification" content="{{ wmv }}">{% endif %}
+    {% endfor %}
+    {% for wmv in m.seo.yandex.webmaster_verify|split:"," %}
+        {% if wmv|trim as wmv %}<meta name="yandex-verification" content="{{ wmv }}">{% endif %}
+    {% endfor %}
 {% endblock %}
 
 {% block trackers %}
@@ -108,23 +108,33 @@
     {% with script_type|default:"text/javascript" as script_type %}
     {% if not m.acl.is_admin and not notrack %}
         {% if m.seo.google.analytics as ga %}
-            <script type="{{ script_type }}" async src="https://www.googletagmanager.com/gtag/js?id={{ ga|urlencode }}" nonce="{{ m.req.csp_nonce }}"></script>
+            <script id="gtagScript" type="{{ script_type }}" async src="https://www.googletagmanager.com/gtag/js?id={{ ga|urlencode }}" nonce="{{ m.req.csp_nonce }}"></script>
             <script type="text/javascript" nonce="{{ m.req.csp_nonce }}">
               window.dataLayer = window.dataLayer || [];
               function gtag(){dataLayer.push(arguments);}
               gtag('js', new Date());
-
               gtag('config', '{{ ga|escapejs }}', { 'anonymize_ip': true });
             </script>
         {% endif %}
         {% if m.seo.google.gtm as gtm %}
-            <script type="{{ script_type }}" nonce="{{ m.req.csp_nonce }}">
-            (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-            new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-            j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-            'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+            <script id="gtmScript" type="{{ script_type }}" nonce="{{ m.req.csp_nonce }}">
+            (function(w,d,s,l,i){
+                w[l] = w[l] || [];
+                w[l].push({ 'gtm.start':new Date().getTime(), event:'gtm.js' });
+                var f = d.getElementsByTagName(s)[0],
+                    j = d.createElement(s),
+                    dl = l!='dataLayer'?'&l='+l:'';
+                j.setAttribute('nonce','{{ m.req.csp_nonce }}');
+                j.async = true;
+                j.src = 'https://www.googletagmanager.com/gtm.js?id='+i+dl;
+                f.parentNode.insertBefore(j,f);
             })(window,document,'script','dataLayer','{{ gtm|escapejs }}');
             </script>
+        {% endif %}
+        {% if m.seo.plausible.analytics %}
+            <script defer type="text/javascript" nonce="{{ m.req.csp_nonce }}"
+                    data-api="https://plausible.io/api/event" data-domain="{{ m.site.hostname }}"
+                    src="https://plausible.io/js/script.js"></script>
         {% endif %}
     {% endif %}
     {% endwith %}

@@ -1,6 +1,7 @@
 %% @author Arjan Scherpenisse <marc@worrell.nl>
 %% @copyright 2010,2011 Arjan Scherpenisse
 %% @doc group a list of sorted rsc ids on their first letter of the title. Then, split this list in #Cols more-or-less even columns.
+%% @end
 
 %% Copyright 2010,2011 Arjan Scherpenisse
 %%
@@ -17,6 +18,35 @@
 %% limitations under the License.
 
 -module(filter_group_title_firstchar).
+-moduledoc("
+Similar to [group_firstchar](/id/doc_template_filter_filter_group_firstchar), but always uses the `title` column from
+the rsc table.
+
+This is merely a shortcut, simplifying the template syntax:
+
+
+```django
+<table>
+{% for cols in m.search[...]|group_title_firstchar:4 %}
+   <td>
+      {% for group in cols %}
+      <b>{{ group.first }}</b>
+      {% for id in group.result %}
+      <li>
+          {{ id.title }}
+      </li>
+      {% endfor %}
+   {% endfor %}
+   </td>
+{% endfor %}
+</table>
+```
+
+Groups alphabetically on title, in four columns.
+
+See also
+
+[group_firstchar](/id/doc_template_filter_filter_group_firstchar)").
 -export([group_title_firstchar/3]).
 
 -include_lib("zotonic_core/include/zotonic.hrl").

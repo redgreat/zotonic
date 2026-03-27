@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'add_day' filter, add days to a date
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,30 @@
 %% limitations under the License.
 
 -module(filter_add_day).
+-moduledoc("
+Adds a day to a date. The value must be of the form `{{Y,M,D},{H,I,S}}`.
+
+For example:
+
+
+```django
+{{ value|add_day }}
+```
+
+When the value is `{{2008,12,10},{15,30,0}}`, the output is `{{2008,12,11},{15,30,0}}`.
+
+The filter has an optional argument which defines the number of days to add:
+
+
+```django
+{{ value|add_day:3 }}
+```
+
+When the value is `{{2008,12,10},{15,30,0}}`, the output is `{{2008,12,13},{15,30,0}}`.
+
+See also
+
+[sub_day](/id/doc_template_filter_filter_sub_day), [add_week](/id/doc_template_filter_filter_add_week), [add_month](/id/doc_template_filter_filter_add_month), [add_year](/id/doc_template_filter_filter_add_year)").
 -export([add_day/2, add_day/3]).
 
 add_day(undefined, _Context) ->

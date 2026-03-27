@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2018-2021 Marc Worrell
-%%
+%% @copyright 2018-2025 Marc Worrell
 %% @doc Call models, direct or via MQTT
+%% @end
 
-%% Copyright 2018-2021 Marc Worrell
+%% Copyright 2018-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -76,7 +76,11 @@ template_get( Model, Path, Payload, Context ) ->
     Msg = payload_msg(Payload),
     case get_module(Model, Context) of
         {ok, Mod} ->
-            model_call(Mod, m_get, Path, Msg, Context);
+            case model_call(Mod, m_get, Path, Msg, Context) of
+                ok -> {ok, {undefined, []}};
+                {ok, _} = Ok -> Ok;
+                {error, _} = Error -> Error
+            end;
         {error, _} ->
             case publish(Model, get, Path, Msg, Context) of
                 {ok, RespPayload} ->
@@ -133,6 +137,7 @@ callback(Model, Verb, Path, Msg, Context) ->
             maybe_resolve(Verb, model_call(Mod, map_verb(Verb), Path, Msg, Context), Context);
         {error, _} = Error ->
             ?LOG_NOTICE(#{
+                site => z_context:site(Context),
                 text => <<"Publish to unknown model">>,
                 in => zotonic_core,
                 model => Model,

@@ -1,3 +1,5 @@
+%% @author Arthur Clemens
+%% @copyright Copyright 2016-2026 Arthur Clemens
 %% @doc Language code handling functions.
 %%
 %% Mandatory background read on language tags: [1].
@@ -29,7 +31,7 @@
 %%  [2] http://www.iana.org/assignments/language-subtag-registry/language-subtag-registry
 %% @end
 
-%% Copyright 2016-2023 Arthur Clemens
+%% Copyright 2016-2026 Arthur Clemens
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -59,12 +61,15 @@
     fallback_language/1,
     fallback_language/2,
     english_name/1,
+    localized_name/2,
     local_name/1,
     is_rtl/1,
     properties/1,
     all_languages/0,
     main_languages/0,
     language_list/1,
+    language_list_sorted/1,
+    sort_localized/2,
     is_language_enabled/2,
     is_language_editable/2,
     enabled_language_codes/1,
@@ -84,15 +89,12 @@
 
 
 %% @doc Initialize the i18n language configurations
--spec initialize_config( z:context() ) -> ok.
+-spec initialize_config( z:context() ) -> ok | {error, term()}.
 initialize_config(Context) ->
     case z_db:has_connection(Context) of
         true ->
             % Set default language
-            case m_config:get_value(i18n, language, Context) of
-                undefined -> m_config:set_value(i18n, language, default_language(Context), Context);
-                _ -> ok
-            end,
+            m_config:set_default_value(i18n, language, default_language(Context), Context),
             % Set list of enabled languages
             case m_config:get_prop(i18n, languages, list, Context) of
                 undefined ->
@@ -126,7 +128,7 @@ initialize_config(Context) ->
 init_config_languages(Context) ->
     case m_config:get(i18n, language_list, Context) of
         undefined ->
-            m_config:set_prop(i18n, languages, list, default_languages(Context), Context);
+            m_config:set_default_prop(i18n, languages, list, default_languages(Context), Context);
         I18NLanguageList ->
             maybe_update_config_list(I18NLanguageList, Context),
             ok
@@ -194,7 +196,8 @@ maybe_set(K, V, Map) ->
 
 
 %% @doc Get the list of configured languages that are enabled. The list is
-%% in the order of configured priority.
+%% in the order of configured priority, falls back to have
+%% at least one enabled language.
 -spec enabled_languages(Context) -> LanguageCodes when
     Context :: z:context(),
     LanguageCodes :: [ language_code() ].
@@ -214,7 +217,8 @@ enabled_languages(Context) ->
     end.
 
 %% @doc Get the list of configured languages that are editable. The list is
-%% in the order of configured priority.
+%% in the order of configured priority, falls back to have
+%% at least one editable language
 -spec editable_languages(Context) -> LanguageCodes when
     Context :: z:context(),
     LanguageCodes :: [ language_code() ].
@@ -334,7 +338,15 @@ fallback_language(Code, Context) ->
 english_name(Code) ->
     get_property(Code, name_en).
 
-%% @doc Returns the local language name.
+%% @doc Returns the language name in the current language.
+-spec localized_name( language(), z:context() ) -> binary() | undefined.
+localized_name(Code, Context) ->
+    case z_context:language(Context) of
+        Code -> get_property(Code, name);
+        _ -> z_trans:trans(english_name(Code), Context)
+    end.
+
+%% @doc Returns the local language name in the language itself.
 -spec local_name( language() ) -> binary() | undefined.
 local_name(Code) ->
     get_property(Code, name).
@@ -398,7 +410,9 @@ properties(Code) when is_list(Code) ->
 %% For each language a map with properties is returned - see properties/1.
 %% Each language is present with its iso code as an atom and binary key. This for
 %% easier lookups.
--spec all_languages() -> map().
+-spec all_languages() -> LanguageMap when
+    LanguageMap :: #{ Code => map() },
+    Code :: binary() | atom().
 all_languages() ->
     z_language_data:languages_map_flat().
 
@@ -407,7 +421,8 @@ all_languages() ->
 main_languages() ->
     z_language_data:languages_map_main().
 
-%% @doc Return the currently configured list of languages
+%% @doc Return the currently configured list of languages, falls back to have
+%% at least one enabled language.
 -spec language_list(z:context()) -> list( {language_code(), language_status()} ).
 language_list(Context) ->
     case m_config:get(i18n, languages, Context) of
@@ -420,7 +435,62 @@ language_list(Context) ->
             end
     end.
 
-%% @doc Return list of languges enabled in the user interface.
+%% @doc Return the currently configured list of languages, sorted by the localized name.
+-spec language_list_sorted(z:context()) -> list( {language_code(), language_status()} ).
+language_list_sorted(Context) ->
+    WithName = lists:map(
+        fun({Code, _Status} = Lang) ->
+            {localized_name(Code, Context), Lang}
+        end,
+        language_list(Context)),
+    Sorted = lists:sort(WithName),
+    [ Lang || {_, Lang} <- Sorted ].
+
+%% @doc Sort a list of language codes by their localized name. If the value is a map then the
+%% property 'name_localized' is added. Always returns a proplist.
+-spec sort_localized
+        ([ language_code() ], Context) -> [ language_code() ] when
+            Context :: z:context();
+        ([ {language_code(), language_status()} ], Context) -> [ {language_code(), language_status()} ] when
+            Context :: z:context();
+        ([ {language_code(), map()} ], Context) -> [ {language_code(), map()} ] when
+            Context :: z:context();
+        ([ map() ], Context) -> [ {language_code(), map()} ] when
+            Context :: z:context().
+sort_localized(Langs, Context) when is_list(Langs) ->
+    WithName = lists:map(
+        fun
+            (Code) when is_atom(Code) ->
+                {localized_name(Code, Context), Code};
+            ({Code, #{ name_en := _ } = Map}) when is_atom(Code) ->
+                LocalizedName = localized_name(Code, Context),
+                {LocalizedName, {Code, Map#{ name_localized => LocalizedName }}};
+            ({Code, Map} = Lang) when is_atom(Code), is_map(Map) ->
+                LocalizedName = localized_name(Code, Context),
+                {LocalizedName, Lang};
+            ({Code, _} = Lang) when is_atom(Code) ->
+                {localized_name(Code, Context), Lang}
+        end,
+        Langs),
+    Sorted = lists:sort(WithName),
+    [ Lang || {_, Lang} <- Sorted ];
+sort_localized(Langs, Context) when is_map(Langs) ->
+    List = maps:fold(
+        fun
+            (Lang, V, Acc) ->
+                case z_language:to_language_atom(Lang) of
+                    {ok, Code} when is_atom(Code) ->
+                        [ {Code, V} | Acc ];
+                    {error, not_a_language} ->
+                        %% Ignore unknown languages
+                        Acc
+                end
+        end,
+        [],
+        Langs),
+    sort_localized(List, Context).
+
+%% @doc Return list of languges enabled in the user interface. This might be an empty list.
 -spec enabled_language_codes(z:context()) -> list( language_code() ).
 enabled_language_codes(Context) ->
     case m_config:get(i18n, languages, Context) of
@@ -435,7 +505,7 @@ enabled_language_codes(Context) ->
                 proplists:get_value(list, Cfg, []))
     end.
 
-%% @doc Return list of languages enabled in the user interface.
+%% @doc Return list of languages enabled in the user interface. This might be an empty list.
 -spec editable_language_codes(z:context()) -> list( language_code() ).
 editable_language_codes(Context) ->
     case m_config:get(i18n, languages, Context) of
@@ -505,7 +575,7 @@ maybe_update_config_list(I18NLanguageList, Context) ->
             % Ensure the default language is the first enabled language
             Default = default_language(Context),
             NewList1 = [ {Default, true} | proplists:delete(Default, NewList) ],
-            m_config:set_prop(i18n, languages, list, NewList1, Context),
+            m_config:set_default_prop(i18n, languages, list, NewList1, Context),
             m_config:delete(i18n, language_list, Context);
         _ ->
             ?LOG_WARNING(#{

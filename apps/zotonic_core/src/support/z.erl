@@ -1,9 +1,10 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2023 Marc Worrell
-%% @doc Some easy shortcuts and error logging functions.
+%% @copyright 2009-2025 Marc Worrell
+%% @doc Interfaces for command line utilities in zotonic_launcher, some
+%% easy shortcuts and error logging functions.
 %% @end
 
-%% Copyright 2009-2023 Marc Worrell
+%% Copyright 2009-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -23,6 +24,8 @@
 %% interface functions
 -export([
     c/1,
+
+    env/1,
 
     n/2,
     n1/2,
@@ -44,6 +47,8 @@
 
     reindex/0,
 
+    is_module_enabled/2,
+
     shell_stopsite/1,
     shell_startsite/1,
     shell_restartsite/1,
@@ -51,6 +56,8 @@
     dispatch_url/1,
     dispatch_path/2,
     dispatch_list/1,
+
+    setconfig/3,
 
     debug_msg/2,
 
@@ -107,11 +114,20 @@
 c(Site) ->
     z_context:new(Site).
 
-%% @doc Send a notification
+%% @doc Return the current environment
+-spec env( Site :: atom() ) -> environment().
+env(Site) ->
+    m_site:environment(Site).
+
+%% @doc Send an async notification.
+n(Msg, Site) when is_atom(Site) ->
+    n(Msg, c(Site));
 n(Msg, Context) ->
     z_notifier:notify(Msg, Context).
 
-%% @doc Send a notification to the first observer
+%% @doc Send a notification to the first observer and return the result.
+n1(Msg, Site) when is_atom(Site) ->
+    n1(Msg, c(Site));
 n1(Msg, Context) ->
     z_notifier:first(Msg, Context).
 
@@ -140,12 +156,19 @@ flush(Site) when is_atom(Site) ->
 flush(Context) ->
     z_depcache:flush(Context),
     z_dispatcher:reload(Context),
-    n(module_ready, Context).
+    z_memo:flush(Context),
+    n(module_ready, Context),
+    ok.
 
 %% @doc Reindex all sites, find new files.
 reindex() ->
     zotonic_fileindexer:flush(),
     z_module_indexer:reindex().
+
+%% @doc Check if a module of a site is enabled.
+-spec is_module_enabled( Module :: atom(), Site :: atom() ) -> boolean().
+is_module_enabled(Module, Site) ->
+    z_module_manager:active(Module, c(Site)).
 
 %% @doc Full restart of Zotonic
 restart() ->
@@ -267,6 +290,11 @@ dispatch_list(SiteOrContext) ->
         {error, _} = Error ->
             Error
     end.
+
+%% @doc Set a runtime config value. This is useful to enable or disable certain
+%% runtime features without restarting Zotonic.
+setconfig(zotonic, Name, Value) when is_atom(Name) ->
+    z_config:set(Name, Value).
 
 %% @doc Echo and return a debugging value. This is useful for adding
 %% debug anywhere in the code, as the passed argument is also returned.

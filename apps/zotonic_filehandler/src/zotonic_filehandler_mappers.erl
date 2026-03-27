@@ -1,9 +1,10 @@
 %% @author Arjan Scherpenisse <arjan@miraclethings.nl>
-%% @copyright 2014-2017 Arjan Scherpenisse
-%%
-%% @doc Handle changed files
+%% @copyright 2014-2025 Arjan Scherpenisse
+%% @doc Handle changed files, run commands and makefiles depending
+%% on the files.
+%% @end
 
-%% Copyright 2014-2017 Arjan Scherpenisse
+%% Copyright 2014-2025 Arjan Scherpenisse
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -362,10 +363,7 @@ compile_coffee(Application, SrcPath) ->
 run_build(Application, {make, Makefile}) ->
     zotonic_filehandler:terminal_notifier("Make: " ++ app_path(Application, Makefile)),
     CmdOpts = [
-        {env, [
-            {"APP_DIR", code:lib_dir(Application)},
-            {"ZOTONIC_LIB", "1"}
-        ]}
+        {env, build_env(Application)}
     ],
     BuildDir = filename:dirname(Makefile),
     MakeCmd = "cd " ++ z_filelib:os_escape(BuildDir) ++ "; sh -c make " ++ z_filelib:os_escape(Makefile),
@@ -373,14 +371,19 @@ run_build(Application, {make, Makefile}) ->
 run_build(Application, {task, Taskfile}) ->
     zotonic_filehandler:terminal_notifier("Task: " ++ app_path(Application, Taskfile)),
     CmdOpts = [
-        {env, [
-            {"APP_DIR", code:lib_dir(Application)},
-            {"ZOTONIC_LIB", "1"}
-        ]}
+        {env, build_env(Application)}
     ],
     BuildDir = filename:dirname(Taskfile),
     TaskCmd = "cd " ++ z_filelib:os_escape(BuildDir) ++ "; sh -c task",
     zotonic_filehandler_compile:run_cmd(TaskCmd, CmdOpts, #{ ignore_dir => BuildDir }).
+
+%% @doc Environment variables passed to the Make or Task command.
+build_env(Application) ->
+    [
+        {"APP_DIR", code:lib_dir(Application)},
+        {"ZOTONIC_APPS", z_path:zotonic_apps()},
+        {"ZOTONIC_LIB", "1"}
+    ].
 
 %% ---------------------------------------- Support routines ------------------------------
 

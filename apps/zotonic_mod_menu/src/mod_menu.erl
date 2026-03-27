@@ -18,6 +18,52 @@
 %% limitations under the License.
 
 -module(mod_menu).
+-moduledoc("
+Create nested navigation menus for your site.
+
+Activating the module in the admin enables a “menu” item in the admin navigation under “content”, which lets you
+define a simple menu. Every item in the menu references a Zotonic page and can be looked up using the autocompletion widget.
+
+This menu can be rendered in the frontend with the [menu](/id/doc_template_scomp_scomp_menu#scomp-menu) custom tag.
+
+It will use the \\_menu.tpl template which is by default able to render a Twitter Bootstrap compatible menu structure
+using nested `<ul\\>` elements.
+
+To implement a different navigation menu, override the `_menu.tpl` in your project and create new markup.
+
+
+
+Domain model
+------------
+
+The [domain model](/id/doc_glossary#term-domain-model) for this module is the following:
+
+The module creates a new category named menu. This allows one to create multiple menus in a single site. Its edit page
+in the admin contains the hierarchical menu editor.
+
+The menu resource that is accessible from the admin page (Content > Menu) is the resource with the unique name `main_menu`.
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_admin_menu`: Add menu management entries to the admin menu.
+- `observe_menu_get_rsc_ids`: Notifier handler to get all menu ids for the default menu using `m_rsc:name_to_id`.
+- `observe_menu_save`: Validate and persist edited menu trees after converting names to resource ids.
+- `observe_rsc_get`: Normalize stored menu values by converting old tuple formats to `#rsc_tree` structures.
+- `observe_rsc_update`: Validate and normalize submitted menu structures during resource updates.
+- `observe_rsc_update_done`: Rebuild `hasmenupart` edges after menu changes so referenced resources are tracked correctly.
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `ensure_hasmenupart`.
+- `event/2` with `postback_notify` messages: `<<\"menuedit\">>`.
+
+See also
+
+The filters [menu_flat](/id/doc_template_filter_filter_menu_flat),
+[menu_subtree](/id/doc_template_filter_filter_menu_subtree) and [menu_trail](/id/doc_template_filter_filter_menu_trail).").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Menus").
@@ -187,7 +233,10 @@ handle_cmd(<<"copy">>, Data, Context) ->
     case m_rsc:is_visible(FromId, Context) of
         true ->
             NewTitle = make_copy_title(m_rsc:p(FromId, title, Context), Context),
-            case m_rsc:duplicate(FromId, [{title, NewTitle}], Context) of
+            NewProps = #{
+                <<"title">> => z_html:unescape(NewTitle)
+            },
+            case m_rsc:duplicate(FromId, NewProps, Context) of
                 {ok, NewId} ->
                     Template = case proplists:get_value(<<"template">>, Data) of
                         undefined -> "_menu_edit_item.tpl";

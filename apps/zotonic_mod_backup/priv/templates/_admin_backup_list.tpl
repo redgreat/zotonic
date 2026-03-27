@@ -1,4 +1,4 @@
-{% if m.acl.use.mod_backup %}
+{% if m.acl.use.mod_backup or m.acl.use.mod_admin_config %}
     <table class="table">
         <thead>
             <tr>
@@ -18,27 +18,33 @@
                                     <span class="label label-info">{_ Encrypted _}</span>
                                 {% endif %}
 
-                                {% if backup.is_files_present %}
-                                    <a {% if backup.is_encrypted %}
-                                           href="{% url backup_download star=backup.name++".tar.gz.enc" %}"
-                                       {% else %}
-                                            href="{% url backup_download star=backup.name++".tar.gz" %}"
-                                       {% endif %}
-                                       download class="btn btn-default btn-xs">{_ download files _}</a>
-                                {% endif %}
+                                {% if m.backup.allow_backup_download %}
+                                    {% if backup.is_files_present %}
+                                        <a {% if backup.is_encrypted %}
+                                               href="{% url backup_download star=backup.name++".tar.gz.enc" %}"
+                                           {% else %}
+                                                href="{% url backup_download star=backup.name++".tar.gz" %}"
+                                           {% endif %}
+                                           download class="btn btn-default btn-xs">{_ download files _}</a>
+                                    {% endif %}
 
-                                {% if backup.is_database_present %}
-                                    <a {% if backup.is_encrypted %}
-                                           href="{% url backup_download star=backup.name++".sql.gz.enc" %}"
-                                       {% else %}
-                                           href="{% url backup_download star=backup.name++".sql.gz" %}"
-                                       {% endif %} 
-                                       download class="btn btn-default btn-xs">{_ download database _}</a>
+                                    {% if backup.is_database_present %}
+                                        <a {% if backup.is_encrypted %}
+                                               href="{% url backup_download star=backup.name++".sql.gz.enc" %}"
+                                           {% else %}
+                                               href="{% url backup_download star=backup.name++".sql.gz" %}"
+                                           {% endif %}
+                                           download class="btn btn-default btn-xs">{_ download database _}</a>
+                                    {% endif %}
                                 {% endif %}
                             {% endif %}
                         </div>
 
                         {{ backup.timestamp|date:_"Y-m-d H:i – l" }}
+
+                        {% if backup.name|match:"-w[0-9]$" %}
+                            <span class="text-muted">– {_ weekly backup _}</span>
+                        {% endif %}
 
                         {% if is_filestore_enabled %}
                             <br>

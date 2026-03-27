@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2010-2017 Marc Worrell
+%% @copyright 2010-2026 Marc Worrell
 %% @doc Check if an entered username is unique
+%% @end
 
-%% Copyright 2010-2017 Marc Worrell
+%% Copyright 2010-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,22 @@
 %% limitations under the License.
 
 -module(validator_admin_identity_email_unique).
+-moduledoc("
+Check if an entered e-mail address is unique, by looking in the [m_identity](/id/doc_model_model_identity) table for
+the email key:
+
+
+```django
+<input type=\"text\" id=\"email\" name=\"email\" value=\"\" />
+{% validate id=\"email\" type={email} type={email_unique} %}
+```
+
+Optionally, an rsc_id parameter can be given to the validator to skip that particular id when doing the uniqueness
+check. This is useful when you are displaying a form in which the user is editing his own email address.
+
+See also
+
+[m_identity](/id/doc_model_model_identity), [username_unique](/id/doc_template_validator_validator_username_unique), [Forms and validation](/id/doc_developerguide_forms_and_validation#guide-validators)").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([
     render_validator/5,
@@ -30,7 +47,8 @@ render_validator(email_unique, TriggerId, TargetId, Args, Context)  ->
     Script = [<<"z_add_validator(\"">>,TriggerId,<<"\", \"postback\", ">>, JsObject, <<");\n">>],
     {Args, Script}.
 
-%% @spec validate(Type, TriggerId, Value, Args, Context) -> {{ok,AcceptedValue}, NewContext} | {{error,Id,Error}, NewContext}
+-spec validate(term(), term(), term(), list(), z:context()) ->
+    {{ok, term()}, z:context()} | {{error, term(), term()}, z:context()}.
 %%          Error = invalid | novalue | {script, Script} | novalidator | string()
 validate(email_unique, Id, Value, Args, Context) ->
     UserId = z_convert:to_integer(proplists:get_value(id, Args)),
@@ -49,7 +67,7 @@ validate(email_unique, Id, Value, Args, Context) ->
             end
     end.
 
-%% @spec event(Event, Context) -> Context
+-spec event(term(), z:context()) -> z:context().
 %% @doc Handle the validation during form entry.
 event(#postback{message={validate, Args}, trigger=TriggerId}, Context) ->
     Value = z_context:get_q(triggervalue, Context),

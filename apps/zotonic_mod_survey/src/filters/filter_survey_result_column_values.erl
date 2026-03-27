@@ -16,6 +16,27 @@
 %% limitations under the License.
 
 -module(filter_survey_result_column_values).
+-moduledoc("
+Used by the survey module to add extra column values to the result editor.
+
+Example usage:
+
+
+```erlang
+{% with id|survey_result_column_values:answer:columns:\"html\" as vs %}
+    {% for col,_ in columns %}
+        <td>
+            {{ vs[col] }}
+        </td>
+    {% endfor %}
+{% endwith %}
+```
+
+Where columns has been returned by the `#survey_result_columns{}` notification.
+
+See also
+
+[survey_result_columns](/id/doc_notification_survey_result_columns#survey-result-columns), [survey_result_column_values](/id/doc_notification_survey_result_column_values#survey-result-column-values)").
 
 -export([
     survey_result_column_values/5

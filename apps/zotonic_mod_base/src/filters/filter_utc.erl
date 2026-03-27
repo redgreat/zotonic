@@ -18,6 +18,21 @@
 %% limitations under the License.
 
 -module(filter_utc).
+-moduledoc("
+Translates a datetime from local time to UTC.
+
+For example:
+
+
+```django
+{{ id.modified|utc|date:\"Ymd:His\\\\Z\" }}
+```
+
+Displays the modification date and time of a resource in Universal Time.
+
+See also
+
+[date](/id/doc_template_filter_filter_date)").
 -export([utc/2]).
 
 

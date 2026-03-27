@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2015 Marc Worrell
 %% @doc Diff two resources
+%% @end
 
 %% Copyright 2015 Marc Worrell
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(filter_admin_merge_diff).
+-moduledoc("
+Todo
+
+Not yet documented.
+").
 
 -export([
     admin_merge_diff/3

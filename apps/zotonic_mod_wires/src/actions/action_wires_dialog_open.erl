@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009 Marc Worrell
-%% Date: 2009-04-27
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Open a dialog with content from a template.
+%% @end
 
-%% Copyright 2009 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,42 @@
 %% limitations under the License.
 
 -module(action_wires_dialog_open).
+-moduledoc("
+Renders a template on the server and opens a dialog with the HTML output of the template.
+
+Example:
+
+
+```django
+{% button text=\"cancel\" action={dialog_open title=\"Select a name\" template=\"_select_name.tpl\" arg=100} %}
+```
+
+The title of this new dialog will be “Select a name”, its contents are the output of rendering the template
+“\\_select_name.tpl”. All arguments are handed as arguments to the template. In this example the template
+“\\_select_name.tpl” is rendered with the arguments “title”, “template” and “arg”.
+
+There can be many levels of dialogs open, they are designated by a *level*, the default dialog opens at level 0. Higher
+levels are displayed above lower levels. There is a special level `\"top\"` which ensures that a dialog is always opened
+above any other open dialog.
+
+Example, opening a dialog above the default dialog:
+
+
+```django
+{% button text=\"ok\" action={dialog_open title=\"Confirm\" template=\"_confirm.tpl\" level=1} %}
+```
+
+Example, opening a dialog above any open dialog:
+
+
+```django
+{% button text=\"ok\" action={dialog_open title=\"Confirm\" template=\"_confirm.tpl\" level=\"top\"} %}
+```
+
+See also
+
+actions [dialog_close](/id/doc_template_action_action_dialog_close), [dialog](/id/doc_template_action_action_dialog)
+and [overlay_open](/id/doc_template_action_action_overlay_open).").
 -author("Marc Worrell <marc@worrell.nl").
 
 %% interface functions
@@ -32,9 +68,8 @@ render_action(TriggerId, TargetId, Args, Context) ->
 	{PostbackMsgJS, _PickledPostback} = z_render:make_postback({dialog, Args}, click, TriggerId, TargetId, ?MODULE, Context),
 	{PostbackMsgJS, Context}.
 
-%% @spec event(Event, Context1) -> Context2
+-spec event(term(), z:context()) -> z:context().
 event(#postback{message={dialog, Args}}, Context) ->
     Title = proplists:get_value(title, Args, ""),
     {template, Template} = proplists:lookup(template, Args),
     z_render:dialog(Title, Template, Args, Context).
-

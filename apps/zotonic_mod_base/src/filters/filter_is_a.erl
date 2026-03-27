@@ -2,6 +2,7 @@
 %% @copyright 2010-2023 Marc Worrell
 %% @doc 'is_a' filter. Filters a list of ids on category, or tests a single resource id
 %% if it is in a category.
+%% @end
 
 %% Copyright 2010-2023 Marc Worrell
 %%
@@ -18,6 +19,59 @@
 %% limitations under the License.
 
 -module(filter_is_a).
+-moduledoc("
+Filter a list of resource ids on category, or test if a single resource id belongs to a category.
+
+This filter can be applied to a list of resource ids or a single resource id.
+
+When it is applied to a list then it will filter the list of ids. Only those resource ids that belong to a certain
+category remain. Optionally the filter only returns the first n matches.
+
+When applied to a single integer (resource id), then it will return a boolean. True when the id belongs to the
+parameter’s category, false otherwise.
+
+
+
+Apply to a single resource id
+-----------------------------
+
+Example:
+
+
+```django
+{{ 1|is_a:\"person\"|yesno }}
+```
+
+Will output “yes”, because the resource with id 1 is a person (the System Administrator).
+
+
+
+Apply to a list of resource ids
+-------------------------------
+
+When applied to a list of ids:
+
+
+```django
+{% for part_id in m.rsc[id].o.haspart|is_a:\"person\" %}
+    {{ m.rsc[part_id].title }}
+{% endfor %}
+```
+
+This will list all collection members that are a person. While:
+
+
+```django
+{% for part_id in m.rsc[id].o.haspart|is_a:\"person\":3 %}
+    {{ m.rsc[part_id].title }}
+{% endfor %}
+```
+
+Lists only the first three collection members that are a person.
+
+See also
+
+[is_not_a](/id/doc_template_filter_filter_is_not_a), [is_visible](/id/doc_template_filter_filter_is_visible), [filter](/id/doc_template_filter_filter_filter)").
 -export([is_a/3, is_a/4]).
 
 is_a(Arg, Cat, Context) when not is_integer(Cat), not is_atom(Cat) ->

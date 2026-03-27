@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2014-2020 Marc Worrell
-%%
+%% @copyright 2014-2026 Marc Worrell
 %% @doc Locate a file and (if needed) generate a preview. Used by z_file_entry.erl
+%% @end
 
-%% Copyright 2014-2020 Marc Worrell
+%% Copyright 2014-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -104,6 +104,21 @@ locate_source(NoRoots, Path, OriginalFile, Filters, Context) when NoRoots =:= un
                 reason => Reason
             }),
             #part_missing{file = Path};
+        {ok, Loc} ->
+            Loc
+    end;
+locate_source([archive|Roots], Path, OriginalFile, [], Context) ->
+    case locate_source_uploaded_1(#{}, Path, OriginalFile, [], Context) of
+        {error, Reason} ->
+            ?LOG_DEBUG(#{
+                text => <<"Could not find file">>,
+                in => zotonic_core,
+                path => Path,
+                file => OriginalFile,
+                result => error,
+                reason => Reason
+            }),
+            locate_source(Roots, Path, OriginalFile, [], Context);
         {ok, Loc} ->
             Loc
     end;
@@ -216,6 +231,8 @@ locate_source_uploaded(Path, OriginalFile, Filters, Context) ->
 
 locate_source_uploaded_1(Medium, _Path, OriginalFile, undefined, Context) ->
     locate_in_filestore(OriginalFile, z_path:media_archive(Context), false, Medium, Context);
+locate_source_uploaded_1(Medium, _Path, OriginalFile, [], Context) ->
+    locate_in_filestore(OriginalFile, z_path:media_archive(Context), false, Medium, Context);
 locate_source_uploaded_1(Medium, Path, OriginalFile, Filters, Context) ->
     case locate_in_filestore(Path, z_path:media_preview(Context), true, Medium, Context) of
         {ok, Part} ->
@@ -225,7 +242,8 @@ locate_source_uploaded_1(Medium, Path, OriginalFile, Filters, Context) ->
     end.
 
 locate_in_filestore(Path, InDir, IsPreview, Medium, Context) ->
-    FSPath = z_convert:to_binary(filename:join(filename:basename(InDir), Path)),
+    LocalPath = filename:join(InDir, Path),
+    BaseDirPath = z_convert:to_binary(filename:join(filename:basename(InDir), Path)),
     OptRscId = maps:get(<<"id">>, Medium, undefined),
     OptMime = case IsPreview of
         true ->
@@ -233,7 +251,7 @@ locate_in_filestore(Path, InDir, IsPreview, Medium, Context) ->
         false ->
             maps:get(<<"mime">>, Medium, undefined)
     end,
-    case z_notifier:first(#filestore{action=lookup, path=FSPath}, Context) of
+    case z_notifier:first(#filestore{action=lookup, path=BaseDirPath, local_path=LocalPath}, Context) of
         {ok, {filezcache, Pid, #{ created := Created, size := Size }}} when is_pid(Pid) ->
             {ok, #part_cache{
                 cache_pid=Pid,
@@ -253,7 +271,7 @@ locate_in_filestore(Path, InDir, IsPreview, Medium, Context) ->
                 mime = OptMime
             }};
         undefined ->
-            part_file(filename:join(InDir, Path), [{acl,OptRscId}, {mime, OptMime}])
+            part_file(LocalPath, [{acl,OptRscId}, {mime, OptMime}])
     end.
 
 part_missing(Filename) ->
@@ -262,7 +280,7 @@ part_missing(Filename) ->
     }}.
 
 part_file(Filename, Opts) ->
-    case file:read_file_info(Filename) of
+    case file:read_file_info(Filename, [raw, {time, universal}]) of
         {ok, #file_info{access = none}} ->
             % No access
             {error, eacces};

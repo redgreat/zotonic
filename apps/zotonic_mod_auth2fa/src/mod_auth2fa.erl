@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2019-2024 Marc Worrell
+%% @copyright 2019-2026 Marc Worrell
 %% @doc Add 2FA TOTP authentication
 %% @end
 
-%% Copyright 2019-2024 Marc Worrell
+%% Copyright 2019-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,12 +18,38 @@
 %% limitations under the License.
 
 -module(mod_auth2fa).
+-moduledoc("
+Two-factor authentication module adding TOTP setup, verification flows, and related auth checks.
+
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_admin_menu`: Add admin menu for external services using `m_auth2fa:is_totp_enabled`.
+- `observe_auth_postcheck`: Check the 2FA code, called after password check passed using `m_auth2fa:is_totp_enabled`.
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `auth2fa_remove_confirm`, `auth2fa_ug`, `dialog_2fa`, `request_2fa`.
+- `event/2` with `submit` messages: `auth2fa_remove`, `auth2fa_set`.
+
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Two-Factor authentication").
 -mod_description("Add two-factor authentication using TOTP").
 -mod_prio(400).
 -mod_depends([authentication, server_storage]).
+-mod_config([
+        #{
+            key => mode,
+            type => integer,
+            default => 0,
+            description => "How often we ask for setting the 2FA code. 0 = never, 1 = once after logon, 2 = every page, 3 = force on logon"
+        }
+    ]).
 
 -export([
     event/2,
@@ -71,7 +97,7 @@ event(#submit{ message={auth2fa_remove, Args} }, Context) ->
         true when Id =:= 1, UserId =:= 1 ->
             ok = m_auth2fa:totp_disable(Id, Context),
             z_render:dialog_close(Context);
-        true ->
+        true when is_integer(UserId) ->
             case z_acl:is_allowed(use, mod_admin_identity, Context) of
                 true ->
                     ok = m_auth2fa:totp_disable(Id, Context),
@@ -87,7 +113,7 @@ event(#submit{ message={auth2fa_remove, Args} }, Context) ->
                             z_render:wire(OnError, Context)
                     end
             end;
-        false ->
+        _ ->
             z_render:growl(?__("Sorry, you are not allowed to remove the 2FA.", Context), Context)
     end;
 event(#postback{ message={request_2fa, _Args} }, Context) ->

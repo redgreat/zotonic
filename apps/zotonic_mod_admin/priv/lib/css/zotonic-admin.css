@@ -16,6 +16,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ---------------------------------------------------------- */
+@view-transition {
+  navigation: auto;
+}
 body,
 body.page-edit {
   color: #222;
@@ -46,6 +49,18 @@ ul,
 ol,
 p {
   margin: 0 0 15px 0;
+}
+
+details summary {
+  display: list-item;
+  list-style: none;
+}
+details summary:before {
+  content: "▶";
+  padding-right: 5px;
+}
+details[open] > summary:first-of-type:before {
+  content: "▼";
 }
 
 table td, table th {
@@ -103,6 +118,31 @@ details summary {
 }
 .z-button-row > * {
   float: left;
+}
+
+body.admin-responsive {
+  height: 100vh;
+  max-height: 100vh;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-rows: 50px 1fr;
+  grid-template-columns: 1fr;
+}
+body.admin-responsive .admin-responsive-container {
+  grid-row: 2;
+  margin: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+body.admin-responsive .admin-responsive-container .content-title {
+  grid-row: 1;
+}
+body.admin-responsive .admin-responsive-container .content {
+  grid-row: 2;
+  height: 100%;
 }
 
 .admin-container {
@@ -201,6 +241,12 @@ pre:empty {
   margin-left: 3px;
 }
 
+.sticky-bottom {
+  position: sticky;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.7);
+}
+
 .text-muted {
   color: #999;
 }
@@ -245,6 +291,12 @@ pre:empty {
   color: #fff;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
 }
+.dropdown-menu > li.active > a .text-muted,
+.dropdown-menu > li.active > a:hover .text-muted,
+.dropdown-menu > li > a:hover .text-muted {
+  color: inherit;
+  opacity: 0.6;
+}
 
 .well {
   box-shadow: none;
@@ -256,7 +308,7 @@ pre:empty {
 .well > .btn,
 .well > a[href],
 .well .btn + .btn {
-  margin: 0 4px 4px 0;
+  margin: 0 4px 0 4px;
 }
 
 .alert {
@@ -333,6 +385,11 @@ code {
   line-height: 18px;
   vertical-align: bottom;
   text-align: center;
+}
+
+/* Give buttons that can wrap a bit of margin */
+.buttons .btn {
+  margin-bottom: 4px;
 }
 
 .btn.disabled {
@@ -945,6 +1002,10 @@ div.modal .modal-footer.sticky-bottom {
   position: sticky;
   bottom: 0;
   background-color: rgba(255, 255, 255, 0.9);
+}
+
+.modal-dialog .well {
+  border: 1px solid #d4d4d4;
 }
 
 #menu-editor .widget-header {
@@ -1849,6 +1910,15 @@ li h3.widget-header {
   font-size: 128px;
   line-height: 1;
   z-index: 10000;
+}
+
+.dragover.dragover-medium:after {
+  content: "⇪♻︎";
+}
+
+.dragover-medium #edit-content-media,
+.dragover-medium #edit-content-media .admin-edit-media {
+  background-color: rgba(255, 255, 0, 0.3);
 }
 
 .environment-development body,

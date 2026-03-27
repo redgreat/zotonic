@@ -1,10 +1,10 @@
 %% @author Marc Worrell
-%% @copyright 2009-2023 Marc Worrell
+%% @copyright 2009-2025 Marc Worrell
 %% @doc Misc utility functions for zotonic
 %% Parts are from wf_utils.erl which is Copyright (c) 2008-2009 Rusty Klophaus
 %% @end
 
-%% Copyright 2009-2023 Marc Worrell
+%% Copyright 2009-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 
 -export([
     otp_release/0,
+    git_version/1,
     pipeline/2,
     write_terms/2,
     get_value/2,
@@ -102,6 +103,28 @@ otp_release() ->
     {match, [Version]} = re:run(erlang:system_info(otp_release), "^R?([0-9]+)", [{capture, all_but_first, list}]),
     list_to_integer(Version).
 
+
+%% @doc Return the 'git' short version from the given work directory.
+-spec git_version(file:filename_all()) -> binary() | undefined.
+git_version(DirPath) ->
+    Cmd = "git rev-parse --short HEAD",
+    case exec:run(Cmd, [sync, stdout, {cd, DirPath}]) of
+        {ok, Res} ->
+            {stdout, Hash} = proplists:lookup(stdout, Res),
+            iolist_to_binary([
+                "git-", z_string:trim(unicode:characters_to_binary(Hash))
+            ]);
+        {error, Reason} ->
+            ?LOG_WARNING(#{
+                in => zotonic_core,
+                text => <<"Git rev-parse failed">>,
+                cmd => unicode:characters_to_binary(Cmd),
+                dir => DirPath,
+                result => error,
+                reason => Reason
+            }),
+            undefined
+    end.
 
 %% @doc Apply a list of functions to a startlist of arguments.
 %% All functions must return: ok | {ok, term()} | {error, term()}.
@@ -426,18 +449,20 @@ hex_encode(Value) -> z_url:hex_encode(Value).
 hex_decode(Value) -> z_url:hex_decode(Value).
 
 %% @doc Hash data and encode into a hex string safe for filenames and texts.
+%% @deprecated Use z_crypto:hex_sha/1 instead.
 -spec hex_sha(Value) -> Hash when
     Value :: iodata(),
     Hash :: binary().
 hex_sha(Value) ->
-    z_url:hex_encode_lc(crypto:hash(sha, Value)).
+    z_crypto:hex_sha(Value).
 
 %% @doc Hash256 data and encode into a hex string safe for filenames and texts.
+%% @deprecated Use z_crypto:hex_sha2/1 instead.
 -spec hex_sha2(Value) -> Hash when
     Value :: iodata(),
     Hash :: binary().
 hex_sha2(Value) ->
-    z_url:hex_encode_lc(crypto:hash(sha256, Value)).
+    z_crypto:hex_sha2(Value).
 
 %% @doc Simple escape function for filenames as commandline arguments.
 %% foo/"bar.jpg -> "foo/\"bar.jpg"; on windows "foo\\\"bar.jpg" (both including quotes!)
@@ -640,7 +665,7 @@ is_true(yes) -> true;
 is_true(on) -> true;
 
 is_true(N) when is_integer(N) andalso N =/= 0 -> true;
-is_true(0.0) -> false;
+is_true(+0.0) -> false;
 is_true(-0.0) -> false;
 is_true(N) when is_float(N) -> true;
 
@@ -894,13 +919,8 @@ group_by_dict([{Key,V}|T], Dict) ->
         false -> group_by_dict(T, dict:store(Key, [V], Dict))
     end.
 
-group_by_addprop(Id, Prop, Context) when is_integer(Id) ->
-    {m_rsc:p(Id, Prop, Context), Id};
-group_by_addprop(L, Prop, _Context) when is_list(L) ->
-    {proplists:get_value(Prop, L), L};
-group_by_addprop(N, _Prop, _Context) ->
-    {undefined, N}.
-
+group_by_addprop(Item, Key, Context) ->
+    {z_template_compiler_runtime:find_value(Key, Item, #{}, Context), Item}.
 
 replace1(F, T, L) ->
     replace1(F, T, L, []).

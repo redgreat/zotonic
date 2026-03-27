@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2015 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Module for editing and managing categories.
+%% @end
 
-%% Copyright 2009-2015 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,43 @@
 %% limitations under the License.
 
 -module(mod_admin_category).
+-moduledoc("
+Note
+
+This module requires the presence of [mod_menu](/id/doc_module_mod_menu) for the required JavaScript files which make
+up the menu editor.
+
+Add support for editing [Categories](/id/doc_userguide_datamodel#guide-datamodel-categories) in the admin, by presenting
+an editable category tree at `http://yoursite.com/admin/category`.
+
+
+
+ACL permissions
+---------------
+
+The following [ACL permissions](/id/doc_developerguide_access_control#guide-authorization) are required:
+
+*   to view the page, [use permission](/id/doc_module_mod_acl_user_groups) on the ‘mod_admin_category’ module
+*   to view the list of categories, [view permissions](/id/doc_module_mod_acl_user_groups#content-acl) on category ‘category’
+*   to edit and re-order the categories, [edit permissions](/id/doc_module_mod_acl_user_groups#content-acl) on category ‘category’.
+Admin module for managing category trees and category resources in the backend.
+
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_admin_menu`: Contribute module entries to the admin menu tree.
+- `observe_category_hierarchy_save`: Check edit permissions and persist category hierarchy changes from the admin UI.
+- `observe_rsc_delete`: Do not allow a category to be removed iff there are resources within that category using `m_category:is_used`.
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `delete_all`.
+- `event/2` with `submit` messages: `delete_move`.
+
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Admin category support").

@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2017-2024 Marc Worrell
+%% @copyright 2017-2026 Marc Worrell
 %% @doc Model for mod_authentication
 %% @end
 
-%% Copyright 2017-2024 Marc Worrell
+%% Copyright 2017-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,28 @@
 %% limitations under the License.
 
 -module(m_authentication).
+-moduledoc("
+Model for authentication state and login support checks, including password authentication flow helpers and reminder/verification actions.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/authenticate/password/...` | Validate username/password and return auth payload with short-lived `auth.token` and `cookie.token` plus cookie exchange URL. |
+| `get` | `/password_min_length/...` | Return configured minimum password length (`mod_authentication.password_min_length`, default `8`). |
+| `get` | `/is_one_step_logon/...` | Return site setting `mod_authentication.is_one_step_logon`. |
+| `get` | `/is_supported/rememberme/...` | Return whether remember-me authentication is supported (requires active database connection). |
+| `get` | `/status/...` | Return authentication status map with `is_authenticated`, `user_id`, `username`, language/timezone preferences, and auth options. |
+| `get` | `/is_rememberme/...` | Return site setting `mod_authentication.is_rememberme`. |
+| `post` | `/request-reminder` | Request password-reset reminders for payload `email`; sends reset mail(s) to matching accounts and returns normalized email. |
+| `post` | `/service-confirm` | Decode and validate signed auth payload (`auth` + `url`) and complete authentication confirmation flow. |
+| `post` | `/service-confirm-passcode` | Decode and validate signed auth-user payload, verify passcode, then complete authentication confirmation flow. |
+| `post` | `/send-verification-message` | Validate signed verification token and, if still valid, trigger identity-verification message delivery. |
+| `post` | `/acceptable-password` | Validate password against min-length/regex policy and leak-check policy (`ok`, `tooshort`, or `dataleak`). |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 
 -behaviour(zotonic_model).
 
@@ -89,7 +111,7 @@ m_get([ <<"is_rememberme">> | Rest ], _Msg, Context) ->
 m_get(_Vs, _Msg, _Context) ->
     {error, unknown_path}.
 
--spec m_post( list( binary() ), zotonic_model:opt_msg(), z:context() ) -> {ok, term()} | {error, term()}.
+-spec m_post( list( binary() ), zotonic_model:opt_msg(), z:context() ) -> zotonic_model:post_return().
 m_post([ <<"request-reminder">> ], #{ payload := Payload }, Context) when is_map(Payload) ->
     request_reminder(Payload, Context);
 m_post([ <<"service-confirm">> ], #{ payload := Payload }, Context) when is_map(Payload) ->
@@ -171,7 +193,7 @@ acceptable_password(Password, Context) ->
     case is_valid_password(Password, Context) of
         true ->
             case not m_config:get_boolean(mod_authentication, password_disable_leak_check, Context)
-                andalso m_authentication:is_powned(Password)
+                andalso is_powned(Password)
             of
                 true ->
                     {error, dataleak};
@@ -206,7 +228,7 @@ is_valid_password(Password, Context) ->
 %% @doc Check is a password has been registerd with the service at https://haveibeenpwned.com
 %% They keep a list of passwords, any match is reported.
 is_powned(Password) ->
-    <<Pre:5/binary, Post/binary>>  = z_string:to_upper(z_utils:hex_sha(Password)),
+    <<Pre:5/binary, Post/binary>>  = z_string:to_upper(z_crypto:hex_sha(Password)),
     Url = <<"https://api.pwnedpasswords.com/range/", Pre/binary>>,
     case z_url_fetch:fetch(Url, []) of
         {ok, {_Url, _Hs, _Sz, Body}} ->

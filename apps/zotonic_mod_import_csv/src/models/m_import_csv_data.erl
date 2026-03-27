@@ -1,7 +1,8 @@
 %% @doc Track imported data, used to check on duplicate imports and track what is imported.
 %% @author Marc Worrell <marc@worrell.nl>
+%% @end
 
-%% Copyright 2015 Marc Worrell
+%% Copyright 2015-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -16,6 +17,16 @@
 %% limitations under the License.
 
 -module(m_import_csv_data).
+-moduledoc("
+Model to track resources imported from CSV and XLSX files.
+
+This stores the which resources are imported and the data that was
+used for the update. Also a checksum is added to quickly see if the
+resource data has been changed. This is useful for repeated imports
+of the same (partially updated) data.
+
+There are no API endpoints for this model.
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -export([

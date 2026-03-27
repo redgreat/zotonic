@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'random' filter, return a random element/elements of a list
+%% @end
 
 %% Copyright 2010-2011 Marc Worrell, Konstantin Nikiforov
 %%
@@ -17,6 +18,21 @@
 %% limitations under the License.
 
 -module(filter_random).
+-moduledoc("
+Returns a random value from a list of values. When the input is an empty list or not a list then the result is undefined.
+
+For example:
+
+
+```django
+{{ [\"a\",\"b\",\"c\"]|random }}
+```
+
+The output of this is one of “a”, “b” or “c”.
+
+See also
+
+[randomize](/id/doc_template_filter_filter_randomize), [rand](/id/doc_template_filter_filter_rand)").
 -export([random/2, random/3]).
 
 

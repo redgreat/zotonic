@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2024 Marc Worrell, Arjan Scherpenisse
+%% @copyright 2009-2026 Marc Worrell, Arjan Scherpenisse
 %% @doc Update routines for resources.  For use by the m_rsc module.
 %% @end
 
-%% Copyright 2009-2024 Marc Worrell, Arjan Scherpenisse
+%% Copyright 2009-2026 Marc Worrell, Arjan Scherpenisse
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,12 @@
 %% limitations under the License.
 
 -module(m_rsc_update).
+-moduledoc("
+Resource update helper module used by `m_rsc`.
+
+This module contains insert/update/delete/merge routines for resources and is logically part of the `m_rsc` model implementation.
+It is not exposed as a standalone model path endpoint.
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 %% interface functions
@@ -28,6 +34,8 @@
     delete/3,
     update/3,
     update/4,
+    update_translation/4,
+    update_translation/5,
     duplicate/3,
     duplicate/4,
     merge_delete/4,
@@ -36,7 +44,8 @@
 
     delete_nocheck/2,
 
-    to_slug/1
+    to_slug/1,
+    normalize_page_path/1
 ]).
 
 -include_lib("zotonic.hrl").
@@ -57,25 +66,40 @@
 -define(LANGUAGE_DETECT_THRESHOLD, 10).
 
 %% @doc Insert a new resource. Crashes when insertion is not allowed.
--spec insert(m_rsc:props_all(), z:context()) -> {ok, m_rsc:resource_id()} | {error, term()}.
+-spec insert(Props, Context) -> {ok, ResourceId} | {error, term()} when
+        Props :: m_rsc:props_all(),
+        Context :: z:context(),
+        ResourceId :: m_rsc:resource_id().
 insert(Props, Context) ->
     insert(Props, [{is_escape_texts, true}], Context).
 
--spec insert(m_rsc:props_all(), list(), z:context()) -> {ok, m_rsc:resource_id()} | {error, term()}.
+-spec insert(Props, Options, Context) -> {ok, ResourceId} | {error, term()} when
+        Props :: m_rsc:props_all(),
+        Options :: m_rsc:update_options(),
+        Context :: z:context(),
+        ResourceId :: m_rsc:resource_id().
 insert(Props, Options, Context) when is_list(Props) ->
     {ok, Map} = z_props:from_list(Props),
     insert(Map, Options, Context);
 insert(Props, Options, Context) when is_map(Props) ->
-    PropsDefaults = props_defaults(Props, Context),
+    PropsDefaults = props_defaults(Props, Options, Context),
     update(insert_rsc, PropsDefaults, Options, Context).
 
 
-%% @doc Delete a resource
--spec delete(m_rsc:resource(), z:context()) -> ok | {error, atom()}.
+%% @doc Delete a resource.
+-spec delete(Id, Context) -> ok | {error, atom()} when
+        Id :: m_rsc:resource(),
+        Context :: z:context().
 delete(Id, Context) ->
     delete(Id, undefined, Context).
 
--spec delete(m_rsc:resource(), m_rsc:resource(), z:context()) -> ok | {error, atom()}.
+%% @doc Delete a resource, optionally set a resource that 'replaces' the
+%% the deleted resources. Requests for the deleted resource will be
+%% redirected to the follow-up resource.
+-spec delete(Id, FollowUpId, Context) -> ok | {error, atom()} when
+        Id :: m_rsc:resource(),
+        FollowUpId :: m_rsc:resource(),
+        Context :: z:context().
 delete(1, _FollowUpId, _Context) ->
     {error, eacces};
 delete(undefined, _FollowUpId, _Context) ->
@@ -107,7 +131,9 @@ delete(Name, FollowUpId, Context) ->
         Context).
 
 %% @doc Delete a resource, no check on rights etc is made. This is called by m_category:delete/3
--spec delete_nocheck(m_rsc:resource(), z:context()) -> ok | {error, atom()}.
+-spec delete_nocheck(Id, Context) -> ok | {error, atom()} when
+        Id :: m_rsc:resource(),
+        Context :: z:context().
 delete_nocheck(Id, Context) ->
     delete_nocheck(m_rsc:rid(Id, Context), undefined, Context).
 
@@ -155,8 +181,13 @@ delete_nocheck(Id, OptFollowUpId, Context) when is_integer(Id) ->
             Error
     end.
 
-%% @doc Merge two resources, delete the losing resource.
--spec merge_delete(m_rsc:resource(), m_rsc:resource(), list(), #context{}) -> ok | {error, term()}.
+%% @doc Merge two resources, update the winner, delete the loser. The losing resource is
+%% deleted with the winning one set as the follow-up resource.
+-spec merge_delete(WinnerId, LoserId, Options, Context) -> ok | {error, term()} when
+        WinnerId :: m_rsc:resource(),
+        LoserId :: m_rsc:resource(),
+        Options :: list(),
+        Context :: #context{}.
 merge_delete(WinnerId, WinnerId, _Options, _Context) ->
     ok;
 merge_delete(_WinnerId, 1, _Options, _Context) ->
@@ -179,10 +210,14 @@ merge_delete(WinnerId, LoserId, Options, Context) ->
     end.
 
 %% @doc Merge two resources, delete the 'loser'
--spec merge_delete_nocheck(integer(), integer(), list(), #context{}) -> ok.
+-spec merge_delete_nocheck(WinnerId, LoserId, Options, Context) -> ok when
+        WinnerId :: integer(),
+        LoserId :: integer(),
+        Options :: list(),
+        Context :: #context{}.
 merge_delete_nocheck(WinnerId, LoserId, Opts, Context) ->
     IsMergeTrans = proplists:get_value(is_merge_trans, Opts, false),
-    z_notifier:map(#rsc_merge{
+    z_notifier:notify_sync(#rsc_merge{
             winner_id = WinnerId,
             loser_id = LoserId,
             is_merge_trans = IsMergeTrans
@@ -198,7 +233,7 @@ merge_delete_nocheck(WinnerId, LoserId, Opts, Context) ->
         [] ->
             ok;
         UpdProps ->
-            {ok, _} = update(WinnerId, UpdProps, [{escape_texts, false}], Context)
+            {ok, _} = update(WinnerId, UpdProps, [{is_escape_texts, false}], Context)
     end,
     ok.
 
@@ -358,11 +393,20 @@ flush(Id, CatList, Context) ->
 
 
 %% @doc Duplicate a resource, creating a new resource with the given title.
--spec duplicate(m_rsc:resource(), m_rsc:props_all(), z:context()) -> {ok, m_rsc:resource_id()} | {error, term()}.
+-spec duplicate(Id, Props, Context) -> {ok, NewId} | {error, term()} when
+        Id :: m_rsc:resource(),
+        Props :: m_rsc:props_all(),
+        Context :: z:context(),
+        NewId :: m_rsc:resource_id().
 duplicate(Id, DupProps, Context) ->
     duplicate(Id, DupProps, [], Context).
 
--spec duplicate(m_rsc:resource(), m_rsc:props_all(), m_rsc:duplicate_options(), z:context()) -> {ok, m_rsc:resource_id()} | {error, term()}.
+-spec duplicate(Id, Props, Options, Context) -> {ok, NewId} | {error, term()} when
+        Id :: m_rsc:resource(),
+        Props :: m_rsc:props_all(),
+        Options :: m_rsc:duplicate_options(),
+        Context :: z:context(),
+        NewId :: m_rsc:resource_id().
 duplicate(Id, DupProps, DupOpts, Context) when is_list(DupProps) ->
     {ok, DupMap} = z_props:from_list(DupProps),
     duplicate(Id, DupMap, DupOpts, Context);
@@ -377,19 +421,31 @@ duplicate(Id, DupProps, DupOpts, Context) when is_integer(Id) ->
                     },
                     FilteredProps = props_filter_protected(RawProps, RscUpd),
                     SafeDupProps = escape_props(true, DupProps, Context),
+                    % Convert date in DupProps to UTC, determine timezone
+                    Tz = timezone(Id, SafeDupProps, DupOpts, Context),
+                    IsAllDay = case maps:get(<<"date_is_all_day">>, DupProps, undefined) of
+                        undefined -> maps:get(<<"date_is_all_day">>, RawProps, false);
+                        DupIsAllDay -> DupIsAllDay
+                    end,
+                    SafeDupProps1 = z_props:normalize_dates(SafeDupProps, z_convert:to_bool(IsAllDay), Tz),
                     InsProps = maps:fold(
                         fun(Key, Value, Acc) ->
                             Acc#{ Key => Value }
                         end,
                         FilteredProps,
-                        SafeDupProps#{
+                        SafeDupProps1#{
                             <<"name">> => undefined,
                             <<"uri">> => undefined,
                             <<"page_path">> => undefined,
                             <<"is_authoritative">> => true,
                             <<"is_protected">> => false
                         }),
-                    case insert(InsProps, [{is_escape_texts, false}], Context) of
+                    InsOpts = [
+                        {is_escape_texts, false},
+                        {is_import, true},
+                        {default_tz, <<"UTC">>}
+                    ],
+                    case insert(InsProps, InsOpts, Context) of
                         {ok, NewId} ->
                             case proplists:get_value(edges, DupOpts, true) of
                                 true ->
@@ -418,13 +474,12 @@ duplicate(undefined, _DupProps, _DupOpts, _Context) ->
 duplicate(Id, DupProps, DupOpts, Context) ->
     duplicate(m_rsc:rid(Id, Context), DupProps, DupOpts, Context).
 
-%% @doc Update a resource
--spec update(
-        m_rsc:resource() | insert_rsc,
-        m_rsc:props_all() | m_rsc:update_function(),
-        z:context()
-    ) ->
-    {ok, m_rsc:resource_id()} | {error, term()}.
+%% @doc Update a resource using default options.
+-spec update(IdOrInsert, PropsOrFun, Context) -> {ok, UpdatedId} | {error, term()} when
+        IdOrInsert :: m_rsc:resource() | insert_rsc,
+        PropsOrFun :: m_rsc:props_all() | m_rsc:update_function(),
+        Context :: z:context(),
+        UpdatedId :: m_rsc:resource_id().
 update(Id, Props, Context) ->
     update(Id, Props, [], Context).
 
@@ -435,20 +490,21 @@ update(Id, Props, Context) ->
 %%      no_touch        (default: false)
 %%      is_import       (default: false)
 %% Other options:
-%%      tz - timezone for date conversions
+%%      tz - forced timezone for date conversions
+%%      default_tz - timezone if no other timezone in update or options, this
+%%                   timezone is selected above the resource timezone.
 %%      expected - list with property value pairs that
 %%                 are expected, fail if the properties
 %%                 are different.
 %%
 %% {is_escape_texts, false} checks if the texts are escaped, and if not then it
 %% will escape. This prevents "double-escaping" of texts.
--spec update(
-        m_rsc:resource() | insert_rsc,
-        m_rsc:props_all() | m_rsc:update_function(),
-        list() | boolean(),
-        z:context()
-    ) ->
-    {ok, m_rsc:resource_id()} | {error, term()}.
+-spec update(IdOrInsert, PropsOrFun, Options, Context) -> {ok, UpdatedId} | {error, term()} when
+        IdOrInsert :: m_rsc:resource() | insert_rsc,
+        PropsOrFun :: m_rsc:props_all() | m_rsc:update_function(),
+        Options :: m_rsc:update_options() | boolean(),
+        Context :: z:context(),
+        UpdatedId :: m_rsc:resource_id().
 update(Id, Props, false, Context) ->
     update(Id, Props, [{is_escape_texts, false}], Context);
 update(Id, Props, true, Context) ->
@@ -464,45 +520,383 @@ update(Name, PropsOrFun, Options, Context) when not is_integer(Name), Name =/= i
             end
     end;
 update(Id, Props, Options, Context) when is_list(Props) ->
-    {ok, Props1} = z_props:from_list(Props),
-    OptionsTz = case proplists:lookup(tz, Options) of
-        {tz, _} ->
-            % Timezone set in the update options
-            Options;
-        none ->
-            case maps:find(<<"tz">>, Props1) of
-                {ok, Tz} ->
-                    % Timezone specified in the update
-                    [ {tz, Tz} | Options ];
-                error ->
-                    case Props of
-                        [ {K, _} | _ ] when is_binary(K); is_list(K) ->
-                            % On a form post input we use the timezone of
-                            % of the request context.
-                            [ {tz, z_context:tz(Context)} | Options ];
-                        _ ->
-                            % Assume UTC
-                            Options
-                    end
-            end
+    {ok, PropsMap} = z_props:from_list(Props),
+    OptionsTz = case timezone(Id, PropsMap, Options, Context) of
+        undefined -> Options;
+        Tz -> [ {tz, Tz} | proplists:delete(tz, Options) ]
     end,
-    update_1(Id, Props1, OptionsTz, Context);
+    update_1(Id, PropsMap, OptionsTz, Context);
 update(Id, PropsOrFun0, Options, Context) when is_integer(Id); Id =:= insert_rsc ->
     PropsOrFun = binary_keys(PropsOrFun0),
     update_1(Id, PropsOrFun, Options, Context).
+
+%% @doc Update a specific language translation of (possibly nested) properties.
+%%      The incoming values are escaped/sanitized before merge and the resulting
+%%      update is sent to update/4 with the option {is_escape_texts, false}.
+-spec update_translation(Id, Language, Props, Context) -> {ok, UpdatedId} | {error, term()} when
+        Id :: m_rsc:resource(),
+        Language :: z_language:language(),
+        Props :: m_rsc:props_all(),
+        Context :: z:context(),
+        UpdatedId :: m_rsc:resource_id().
+update_translation(Id, Language, Props, Context) ->
+    update_translation(Id, Language, Props, [], Context).
+
+%% @doc Like update_translation/4, with extra update options.
+%%      For nested values the top-level property is merged from raw resource
+%%      properties. For blocks, merge is by block name while preserving order
+%%      and disallowing add/remove/reorder of blocks.
+-spec update_translation(Id, Language, Props, Options, Context) -> {ok, UpdatedId} | {error, term()} when
+        Id :: m_rsc:resource(),
+        Language :: z_language:language(),
+        Props :: m_rsc:props_all(),
+        Options :: m_rsc:update_options(),
+        Context :: z:context(),
+        UpdatedId :: m_rsc:resource_id().
+update_translation(Name, Language, Props, Options, Context) when not is_integer(Name) ->
+    case m_rsc:name_to_id(Name, Context) of
+        {ok, Id} ->
+            update_translation(Id, Language, Props, Options, Context);
+        {error, _} ->
+            case m_rsc:rid(Name, Context) of
+                undefined -> {error, enoent};
+                Id -> update_translation(Id, Language, Props, Options, Context)
+            end
+    end;
+update_translation(Id, Language, Props, Options, Context) when is_list(Props) ->
+    {ok, PropsMap} = z_props:from_list(Props),
+    update_translation(Id, Language, PropsMap, Options, Context);
+update_translation(Id, Language, Props, Options, Context) when is_integer(Id), is_map(Props) ->
+    case z_language:to_language_atom(Language) of
+        {ok, LanguageAtom} ->
+            PropsMap = z_props:from_map(Props),
+            SafeProps = z_sanitize:escape_props(PropsMap, Context),
+            update_translation_1(Id, LanguageAtom, SafeProps, Options, Context);
+        {error, _} = Error ->
+            Error
+    end.
+
+update_translation_1(Id, Language, SafeProps, Options, Context) ->
+    case m_rsc:get_raw(Id, Context) of
+        {ok, Raw} ->
+            {OptionsExpected, IsSetExpected} = maybe_set_expected_version_option(Raw, Options),
+            Merge = update_translation_merge_props(Raw, SafeProps, Language, Context),
+            UpdateOptions = [ {is_escape_texts, false} | proplists:delete(is_escape_texts, proplists:delete(escape_texts, OptionsExpected)) ],
+            case update(Id, Merge, UpdateOptions, Context) of
+                {error, {expected, _, _}} when IsSetExpected ->
+                    update_translation_retry(Id, Language, SafeProps, Options, Context);
+                Result ->
+                    Result
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+update_translation_retry(Id, Language, SafeProps, Options, Context) ->
+    case m_rsc:get_raw(Id, Context) of
+        {ok, Raw} ->
+            {OptionsExpected, _} = maybe_set_expected_version_option(Raw, Options),
+            Merge = update_translation_merge_props(Raw, SafeProps, Language, Context),
+            UpdateOptions = [ {is_escape_texts, false} | proplists:delete(is_escape_texts, proplists:delete(escape_texts, OptionsExpected)) ],
+            update(Id, Merge, UpdateOptions, Context);
+        {error, _} = Error ->
+            Error
+    end.
+
+maybe_set_expected_version_option(Raw, Options) ->
+    case proplists:get_value(expected, Options, undefined) of
+        undefined ->
+            Version = maps:get(<<"version">>, Raw),
+            {[ {expected, [ {<<"version">>, Version} ]} | Options ], true};
+        _ ->
+            {Options, false}
+    end.
+
+update_translation_merge_props(Raw, Props, Language, Context) ->
+    RawLanguages = maps:get(<<"language">>, Raw, []),
+    Languages = case lists:member(Language, RawLanguages) of
+        true -> RawLanguages;
+        false -> lists:usort([ Language | RawLanguages ])
+    end,
+    Props1 = maps:remove(<<"language">>, Props),
+    MergedTop = lists:foldl(
+        fun(Key, Acc) ->
+            Existing = maps:get(Key, Raw, undefined),
+            Incoming = maps:get(Key, Props1),
+            Value = update_translation_merge_value(
+                [ Key ],
+                Existing,
+                Incoming,
+                Language,
+                Languages,
+                Context),
+            Acc#{ Key => Value }
+        end,
+        #{},
+        maps:keys(Props1)),
+    MergedTop#{ <<"language">> => Languages }.
+
+update_translation_merge_value([ <<"blocks">> ], Existing, Incoming, Language, Languages, Context) when is_map(Incoming); is_list(Incoming) ->
+    update_translation_merge_blocks(Existing, Incoming, Language, Languages, Context);
+update_translation_merge_value(Path, Existing, Incoming, Language, Languages, Context) when is_map(Incoming) ->
+    Base = case is_map(Existing) of
+        true -> Existing;
+        false -> #{}
+    end,
+    maps:fold(
+        fun(K, V, Acc) ->
+            ExistingValue = maps:get(K, Acc, undefined),
+            Value = update_translation_merge_value(
+                [ K | Path ],
+                ExistingValue,
+                V,
+                Language,
+                Languages,
+                Context),
+            Acc#{ K => Value }
+        end,
+        Base,
+        Incoming);
+update_translation_merge_value(Path, Existing, Incoming, Language, Languages, Context) when is_list(Incoming) ->
+    ExistingList = case is_list(Existing) of
+        true -> Existing;
+        false when Existing =:= <<>> -> [];
+        false when Existing =:= undefined -> [];
+        false -> [ Existing ]
+    end,
+    update_translation_merge_list(Path, ExistingList, Incoming, Language, Languages, Context);
+update_translation_merge_value(_Path, #trans{} = Existing, Incoming, Language, Languages, _Context) ->
+    Value = update_translation_incoming_value(Incoming, Language),
+    update_translation_set_trans(Existing, Language, Value, Languages, false);
+update_translation_merge_value(Path, Existing, Incoming, Language, Languages, _Context) ->
+    case update_translation_is_translatable(Path, Existing, Incoming) of
+        true ->
+            BaseLanguage = case Languages of
+                [ L | _ ] -> L;
+                [] -> Language
+            end,
+            Trans0 = update_translation_init_trans(Existing, BaseLanguage, Languages),
+            Value = update_translation_incoming_value(Incoming, Language),
+            update_translation_set_trans(Trans0, Language, Value, Languages, true);
+        false ->
+            Incoming
+    end.
+
+update_translation_merge_list(_Path, Existing, [], _Language, _Languages, _Context) ->
+    Existing;
+update_translation_merge_list(Path, [ E | Es ], [ I | Is ], Language, Languages, Context) ->
+    [ update_translation_merge_value(Path, E, I, Language, Languages, Context)
+      | update_translation_merge_list(Path, Es, Is, Language, Languages, Context)
+    ];
+update_translation_merge_list(Path, [], [ I | Is ], Language, Languages, Context) ->
+    [ update_translation_merge_value(Path, undefined, I, Language, Languages, Context)
+      | update_translation_merge_list(Path, [], Is, Language, Languages, Context)
+    ].
+
+update_translation_merge_blocks(ExistingBlocks, IncomingBlocks, Language, Languages, Context)
+    when is_list(ExistingBlocks) ->
+    IncomingByName = update_translation_blocks_by_name(IncomingBlocks),
+    update_translation_log_missing_blocks(ExistingBlocks, IncomingByName),
+    lists:map(
+        fun
+            (#{ <<"name">> := Name } = Block) ->
+                case maps:get(Name, IncomingByName, undefined) of
+                    undefined ->
+                        Block;
+                    Incoming when is_map(Incoming) ->
+                        Block1 = update_translation_merge_value(
+                            [ Name, <<"blocks">> ],
+                            Block,
+                            Incoming,
+                            Language,
+                            Languages,
+                            Context),
+                        Block1#{
+                            <<"name">> => maps:get(<<"name">>, Block),
+                            <<"type">> => maps:get(<<"type">>, Block, maps:get(<<"type">>, Block1, undefined))
+                        };
+                    _ ->
+                        Block
+                end;
+            (Block) ->
+                Block
+        end,
+        ExistingBlocks);
+update_translation_merge_blocks(ExistingBlocks, _IncomingBlocks, _Language, _Languages, _Context) ->
+    ExistingBlocks.
+
+update_translation_log_missing_blocks(ExistingBlocks, IncomingByName) ->
+    ExistingNames = maps:from_list(
+        lists:filtermap(
+            fun
+                (#{ <<"name">> := Name }) when is_binary(Name) -> {true, {Name, true}};
+                (_) -> false
+            end,
+            ExistingBlocks)),
+    lists:foreach(
+        fun({Name, _Block}) ->
+            case maps:is_key(Name, ExistingNames) of
+                true ->
+                    ok;
+                false ->
+                    ?LOG_NOTICE(#{
+                        in => zotonic_core,
+                        text => <<"Ignoring translation update for non-existing block">>,
+                        block_name => Name
+                    }),
+                    ok
+            end
+        end,
+        maps:to_list(IncomingByName)).
+
+update_translation_blocks_by_name(Blocks) when is_list(Blocks) ->
+    lists:foldl(
+        fun
+            (#{ <<"name">> := Name } = Block, Acc) ->
+                Acc#{ Name => Block };
+            (_, Acc) ->
+                Acc
+        end,
+        #{},
+        Blocks);
+update_translation_blocks_by_name(Blocks) when is_map(Blocks) ->
+    maps:fold(
+        fun
+            (Name, Block, Acc) when is_binary(Name), is_map(Block) ->
+                Acc#{ Name => Block#{ <<"name">> => Name } };
+            (_, _, Acc) ->
+                Acc
+        end,
+        #{},
+        Blocks);
+update_translation_blocks_by_name(_) ->
+    #{}.
+
+update_translation_is_translatable(Path, Existing, Incoming) ->
+    case update_translation_is_clear_typed(Path, Existing, Incoming) of
+        true -> false;
+        false ->
+            update_translation_is_text_like(Existing) orelse update_translation_is_text_like(Incoming)
+    end.
+
+update_translation_is_clear_typed(Path, Existing, Incoming) ->
+    update_translation_is_clear_type_value(Existing)
+    orelse update_translation_is_clear_type_value(Incoming)
+    orelse not update_translation_is_translatable_type_key(Path).
+
+update_translation_is_clear_type_value(undefined) -> false;
+update_translation_is_clear_type_value(#trans{}) -> false;
+update_translation_is_clear_type_value(V) when is_binary(V) -> false;
+update_translation_is_clear_type_value([ C | _ ]) when is_integer(C) -> false;
+update_translation_is_clear_type_value(V) when is_map(V); is_list(V) -> true;
+update_translation_is_clear_type_value(V) when is_boolean(V); is_integer(V); is_float(V) -> true;
+update_translation_is_clear_type_value(V) when is_atom(V) -> true;
+update_translation_is_clear_type_value(_) -> false.
+
+update_translation_is_translatable_type_key([ Key | _ ]) ->
+    case z_props:property_name_type_hint(Key) of
+        text -> true;
+        html -> true;
+        undefined -> true;
+        _ -> false
+    end.
+
+update_translation_is_text_like(#trans{}) -> true;
+update_translation_is_text_like(V) when is_binary(V) -> true;
+update_translation_is_text_like([ C | _ ]) when is_integer(C) -> true;
+update_translation_is_text_like(_) -> false.
+
+update_translation_incoming_value(#trans{ tr = Tr }, Language) ->
+    proplists:get_value(Language, Tr, <<>>);
+update_translation_incoming_value(undefined, _Language) ->
+    <<>>;
+update_translation_incoming_value([ C | _ ] = Text, _Language) when is_integer(C) ->
+    unicode_characters_to_binary(Text);
+update_translation_incoming_value(Value, _Language) ->
+    z_convert:to_binary(Value).
+
+update_translation_init_trans(#trans{} = Trans, _BaseLanguage, _Languages) ->
+    Trans;
+update_translation_init_trans(Existing, BaseLanguage, Languages) ->
+    Tr0 = [ {Lang, <<>>} || Lang <- Languages ],
+    Tr1 = case Existing of
+        V when is_binary(V) ->
+            [ {BaseLanguage, V} | proplists:delete(BaseLanguage, Tr0) ];
+        [ C | _ ] = Text when is_integer(C) ->
+            [ {BaseLanguage, unicode_characters_to_binary(Text)} | proplists:delete(BaseLanguage, Tr0) ];
+        _ ->
+            Tr0
+    end,
+    #trans{ tr = Tr1 }.
+
+update_translation_set_trans(#trans{ tr = Tr0 }, Language, Value, Languages, IsEnsureAllLanguages) ->
+    Tr1 = case IsEnsureAllLanguages of
+        true -> update_translation_ensure_langs(Tr0, Languages);
+        false -> Tr0
+    end,
+    Value1 = update_translation_incoming_value(Value, Language),
+    #trans{ tr = [ {Language, Value1} | proplists:delete(Language, Tr1) ] }.
+
+update_translation_ensure_langs(Tr, []) ->
+    Tr;
+update_translation_ensure_langs(Tr, [ Lang | Rest ]) ->
+    Tr1 = case proplists:is_defined(Lang, Tr) of
+        true -> Tr;
+        false -> [ {Lang, <<>>} | Tr ]
+    end,
+    update_translation_ensure_langs(Tr1, Rest).
+
+%% @doc Determine the timezone for date conversions, if it is not given in the options.
+%% Order:
+%% 1. 'tz' option in options
+%% 2. 'tz' value in update props
+%% 3. 'default_tz' option in options
+%% 4. 'tz' property of resource
+%% 5. timezone of context.
+timezone(Id, PropsMap, Options, Context) ->
+    case proplists:lookup(tz, Options) of
+        {tz, Tz} when Tz =/= <<>>, Tz =/= undefined ->
+            % Timezone forced in the update options
+            Tz;
+        _ ->
+            timezone_1(Id, PropsMap, Options, Context)
+    end.
+
+%% @doc Determine the timezone for date conversions, if it is not given in the options.
+timezone_1(_Id, #{ <<"tz">> := Tz }, _Options, _Context) when Tz =/= undefined, Tz =/= <<>> ->
+    % Timezone specified in the update.
+    Tz;
+timezone_1(Id, _PropsMap, Options, Context) ->
+    case proplists:lookup(default_tz, Options) of
+        {default_tz, Tz} when Tz =/= <<>>, Tz =/= undefined ->
+            Tz;
+        _ ->
+            timezone_2(Id, Context)
+    end.
+
+timezone_2(Id, Context) when is_integer(Id) ->
+    % Assume a resource is edited in its own timezone, if the timezone is not
+    % part of the update or update options.
+    case m_rsc:p_no_acl(Id, <<"tz">>, Context) of
+        None when None =:= undefined; None =:= <<>> ->
+            % Assume requestor's timezone.
+            z_context:tz(Context);
+        Tz ->
+            Tz
+    end;
+timezone_2(_Id, Context) ->
+    % Assume the timezone of the request context -- when inserting new resources
+    % we do assume the requestor's timezone.
+    z_context:tz(Context).
 
 update_1(Id, PropsOrFun, Options, Context) when is_integer(Id); Id =:= insert_rsc ->
     IsImport = proplists:get_value(is_import, Options, false),
     Tz0 = case is_map(PropsOrFun) of
         true when not IsImport ->
-            % Timezone in the update props is leading over the timezone in the options
-            case maps:get(<<"tz">>, PropsOrFun, undefined) of
-                undefined -> proplists:get_value(tz, Options, <<"UTC">>);
-                <<>> -> proplists:get_value(tz, Options, <<"UTC">>);
-                PropTz -> PropTz
-            end;
+            timezone(Id, PropsOrFun, Options, Context);
         _ ->
-            proplists:get_value(tz, Options, <<"UTC">>)
+            % Take timezone from options or request
+            timezone(undefined, #{}, Options, Context)
     end,
     % Sanity fallback for 'undefined' tz in the options
     Tz = case Tz0 of
@@ -590,7 +984,7 @@ update_normalize_props(RscUpd, Func, Context) when is_function(Func) ->
 is_all_day(_Id, #{ <<"date_is_all_day">> := IsAllDay }, _Context) ->
     z_convert:to_bool(IsAllDay);
 is_all_day(Id, _Props, Context) when is_integer(Id) ->
-    z_convert:to_bool(m_rsc:p_no_acl(Id, date_is_all_day, Context));
+    z_convert:to_bool(m_rsc:p_no_acl(Id, <<"date_is_all_day">>, Context));
 is_all_day(_Id, _Props, _Context) ->
     false.
 
@@ -656,6 +1050,18 @@ update_result({ok, NewId, {OldProps, NewProps, OldCatList, IsCatInsert}}, #rscup
         },
         Context),
 
+    % If a new or updated resource becomes dependent, then schedule a check
+    % if it is connected. If not then it should be deleted.
+    case maps:get(<<"is_dependent">>, NewProps, false) of
+        true ->
+            case maps:get(<<"is_dependent">>, OldProps, false) of
+                true -> ok;
+                false -> z_edge_log_server:maybe_schedule_dependent_check(NewId, Context)
+            end;
+        false ->
+            ok
+    end,
+
     % Return the updated or inserted id
     {ok, NewId};
 update_result({rollback, {error, _} = Er}, _RscUpd, _Context) ->
@@ -691,7 +1097,7 @@ update_transaction_fun_props_1(#rscupd{id = Id} = RscUpd, Raw, Func, Context) ->
 
 update_transaction_filter_props(#rscupd{id = Id} = RscUpd, UpdateProps, Raw, Context) ->
     {Edges, UpdateProps1} = split_edges(UpdateProps),
-    EditableProps = props_filter_protected( props_filter( props_trim(UpdateProps1), Context), RscUpd),
+    EditableProps = props_filter_protected( props_filter( props_trim(UpdateProps1), RscUpd, Context), RscUpd),
     SafeProps = escape_props(RscUpd#rscupd.is_escape_texts, EditableProps, Context),
     SafeSlugProps = generate_slug(Id, SafeProps, Context),
     case preflight_check(Id, SafeSlugProps, Context) of
@@ -1240,23 +1646,39 @@ preflight_check_name(_Id, _Props, _Context) ->
     ok.
 
 
-preflight_check_page_path(Id, #{ <<"page_path">> := Path }, Context) when Path =/= undefined ->
-    case z_db:q1("select count(*) from rsc where page_path = $1 and id <> $2", [Path, Id], Context) of
-        0 ->
+%% @doc Preflight checks are done after the page_path is normalized.
+preflight_check_page_path(Id, #{ <<"page_path">> := PagePath }, Context) ->
+    case page_paths(PagePath) of
+        [] ->
             ok;
-        _N ->
-            ?LOG_WARNING(#{
-                text => <<"Trying to insert duplicate page_path">>,
-                in => zotonic_core,
-                result => error,
-                reason => duplicate_page_path,
-                rsc_id => Id,
-                page_path => Path
-            }),
-            {error, duplicate_page_path}
+        Paths ->
+            case z_db:q1("
+                select count(*) from rsc
+                where pivot_page_path && $1
+                  and id <> $2", [ Paths, Id], Context)
+            of
+                0 ->
+                    ok;
+                _N ->
+                    ?LOG_WARNING(#{
+                        text => <<"Trying to insert duplicate page_path">>,
+                        in => zotonic_core,
+                        result => error,
+                        reason => duplicate_page_path,
+                        rsc_id => Id,
+                        page_path => Paths
+                    }),
+                    {error, duplicate_page_path}
+            end
     end;
 preflight_check_page_path(_Id, _Props, _Context) ->
     ok.
+
+page_paths(undefined) -> [];
+page_paths(<<>>) -> [];
+page_paths(B) when is_binary(B) -> [B];
+page_paths(#trans{ tr = Tr }) -> lists:usort([ T || {_, T} <- Tr, T =/= <<>> ]).
+
 
 preflight_check_uri(Id, #{ <<"uri">> := Uri }, Context) when Uri =/= undefined ->
     case z_db:q1("select count(*) from rsc where uri = $1 and id <> $2", [Uri, Id], Context) of
@@ -1339,24 +1761,24 @@ props_trim(Props) ->
 
 
 %% @doc Remove properties the user is not allowed to change and convert some other to the correct data type
-props_filter(Props, Context) ->
+props_filter(Props, RscUpd, Context) ->
     maps:fold(
         fun(K, V, Acc) ->
-            props_filter(K, V, Acc, Context)
+            props_filter(K, V, Acc, RscUpd, Context)
         end,
         #{},
         Props).
 
-props_filter(<<"uri">>, Uri, Acc, _Context) when ?is_empty(Uri) ->
+props_filter(<<"uri">>, Uri, Acc, _RscUpd, _Context) when ?is_empty(Uri) ->
     Acc#{ <<"uri">> => undefined };
-props_filter(<<"uri">>, Uri, Acc, _Context) ->
+props_filter(<<"uri">>, Uri, Acc, _RscUpd, _Context) ->
     case z_sanitize:uri(Uri) of
         <<"#script-removed">> ->
             Acc#{ <<"uri">> => undefined };
         CleanUri ->
             Acc#{ <<"uri">> => CleanUri }
     end;
-props_filter(<<"name">>, Name, Acc, Context) ->
+props_filter(<<"name">>, Name, Acc, _RscUpd, Context) ->
     case z_acl:is_allowed(use, mod_admin, Context) of
         true ->
             case z_utils:is_empty(Name) of
@@ -1372,28 +1794,42 @@ props_filter(<<"name">>, Name, Acc, Context) ->
         false ->
             Acc
     end;
-props_filter(<<"page_path">>, Path, Acc, Context) ->
+props_filter(<<"page_path">>, Path, Acc, RscUpd, Context) ->
     case z_acl:is_allowed(use, mod_admin, Context) of
         true when ?is_empty(Path) ->
             Acc#{ <<"page_path">> => undefined };
         true ->
-            P = iolist_to_binary([
-                $/, z_string:trim(z_url:url_path_encode(Path), $/)
-            ]),
-            Acc#{ <<"page_path">> => P };
+            IsEncoded = not RscUpd#rscupd.is_escape_texts,
+            Path1 = if
+                is_binary(Path) ->
+                    normalize_page_path(Path, IsEncoded);
+                is_list(Path) ->
+                    normalize_page_path(unicode_characters_to_binary(Path), IsEncoded);
+                true ->
+                    case Path of
+                        #trans{ tr = [] } ->
+                            undefined;
+                        #trans{ tr = Tr } ->
+                            Tr1 = [ {Lang, normalize_page_path(P, IsEncoded)} || {Lang, P} <- Tr ],
+                            #trans{ tr = Tr1 };
+                        _ ->
+                            undefined
+                    end
+            end,
+            Acc#{ <<"page_path">> => Path1 };
         false ->
             Acc
     end;
-props_filter(<<"title_slug">>, Slug, Acc, _Context) when ?is_empty(Slug) ->
+props_filter(<<"title_slug">>, Slug, Acc, _RscUpd, _Context) when ?is_empty(Slug) ->
     Acc;
-props_filter(<<"title_slug">>, Slug, Acc, Context) ->
+props_filter(<<"title_slug">>, Slug, Acc, _RscUpd, Context) ->
     Slug1 = to_slug(Slug),
     SlugNoTr = z_trans:lookup_fallback(Slug1, en, Context),
     Acc#{
         <<"slug">> => z_convert:to_binary(SlugNoTr),
         <<"title_slug">> => Slug1
     };
-props_filter(<<"slug">>, Slug, Acc, _Context) ->
+props_filter(<<"slug">>, Slug, Acc, _RscUpd, _Context) ->
     case maps:is_key(<<"slug">>, Acc) of
         true ->
             Acc;
@@ -1402,17 +1838,17 @@ props_filter(<<"slug">>, Slug, Acc, _Context) ->
                 <<"slug">> => to_slug(Slug)
             }
     end;
-props_filter(<<"is_", _/binary>> = B, P, Acc, _Context) ->
+props_filter(<<"is_", _/binary>> = B, P, Acc, _RscUpd, _Context) ->
     Acc#{ B => z_convert:to_bool(P) };
-props_filter(<<"visible_for">> = B, P, Acc, _Context) ->
+props_filter(<<"visible_for">> = B, P, Acc, _RscUpd, _Context) ->
     Acc#{ B => z_convert:to_integer(P) };
-props_filter(<<"custom_slug">> = B, P, Acc, _Context) ->
+props_filter(<<"custom_slug">> = B, P, Acc, _RscUpd, _Context) ->
     Acc#{ B => z_convert:to_bool(P) };
-props_filter(<<"date_is_all_day">> = B, P, Acc, _Context) ->
+props_filter(<<"date_is_", _/binary>> = B, P, Acc, _RscUpd, _Context) ->
     Acc#{ B => z_convert:to_bool(P) };
-props_filter(<<"seo_noindex">> = B, P, Acc, _Context) ->
+props_filter(<<"seo_noindex">> = B, P, Acc, _RscUpd, _Context) ->
     Acc#{ B => z_convert:to_bool(P) };
-props_filter(P, DT, Acc, _Context)
+props_filter(P, DT, Acc, _RscUpd, _Context)
     when P =:= <<"created">>;           P =:= <<"modified">>;
          P =:= <<"date_start">>;        P =:= <<"date_end">>;
          P =:= <<"publication_start">>; P =:= <<"publication_end">>  ->
@@ -1425,7 +1861,7 @@ props_filter(P, DT, Acc, _Context)
     Acc#{
         P => DateTime
     };
-props_filter(P, Id, Acc, Context)
+props_filter(P, Id, Acc, _RscUpd, Context)
     when P =:= <<"creator_id">>;
          P =:= <<"modifier_id">> ->
     case m_rsc:rid(Id, Context) of
@@ -1434,10 +1870,10 @@ props_filter(P, Id, Acc, Context)
         RId ->
             Acc#{ P => RId }
     end;
-props_filter(<<"category">>, CatName, Acc, Context) ->
+props_filter(<<"category">>, CatName, Acc, _RscUpd, Context) ->
     {ok, CategoryId} = m_category:name_to_id(CatName, Context),
     Acc#{ <<"category_id">> => CategoryId };
-props_filter(<<"category_id">>, CatId, Acc, Context) ->
+props_filter(<<"category_id">>, CatId, Acc, _RscUpd, Context) ->
     CatId1 = m_rsc:rid(CatId, Context),
     case m_rsc:is_a(CatId1, category, Context) of
         true ->
@@ -1451,13 +1887,13 @@ props_filter(<<"category_id">>, CatId, Acc, Context) ->
             {ok, OtherId} = m_category:name_to_id(other, Context),
             Acc#{ <<"category_id">> => OtherId }
     end;
-props_filter(<<"content_group">>, CG, Acc, _Context) when ?is_empty(CG) ->
+props_filter(<<"content_group">>, CG, Acc, _RscUpd, _Context) when ?is_empty(CG) ->
     Acc#{ <<"content_group_id">> => undefined };
-props_filter(<<"content_group">>, CgName, Acc, Context) ->
-    props_filter(<<"content_group_id">>, CgName, Acc, Context);
-props_filter(<<"content_group_id">>, CgId, Acc, _Context) when ?is_empty(CgId) ->
+props_filter(<<"content_group">>, CgName, Acc, RscUpd, Context) ->
+    props_filter(<<"content_group_id">>, CgName, Acc, RscUpd, Context);
+props_filter(<<"content_group_id">>, CgId, Acc, _RscUpd, _Context) when ?is_empty(CgId) ->
     Acc#{ <<"content_group_id">> => undefined };
-props_filter(<<"content_group_id">>, CgId, Acc, Context) ->
+props_filter(<<"content_group_id">>, CgId, Acc, _RscUpd, Context) ->
     CgId1 = m_rsc:rid(CgId, Context),
     case m_rsc:is_a(CgId1, content_group, Context)
         orelse m_rsc:is_a(CgId1, acl_collaboration_group, Context)
@@ -1472,7 +1908,7 @@ props_filter(<<"content_group_id">>, CgId, Acc, Context) ->
             }),
             Acc
     end;
-props_filter(Location, P, Acc, _Context)
+props_filter(Location, P, Acc, _RscUpd, _Context)
     when Location =:= <<"location_lat">>;
          Location =:= <<"location_lng">> ->
     X = try
@@ -1481,23 +1917,23 @@ props_filter(Location, P, Acc, _Context)
             _:_ -> undefined
         end,
     Acc#{ Location => X };
-props_filter(<<"pref_language">>, Lang, Acc, _Context) ->
+props_filter(<<"pref_language">>, Lang, Acc, _RscUpd, _Context) ->
     Lang1 = case z_language:to_language_atom(Lang) of
         {ok, LangAtom} -> LangAtom;
         {error, not_a_language} -> undefined
     end,
     Acc#{ <<"pref_language">> => Lang1 };
-props_filter(<<"medium_language">>, Lang, Acc, _Context) ->
+props_filter(<<"medium_language">>, Lang, Acc, _RscUpd, _Context) ->
     Lang1 = case z_language:to_language_atom(Lang) of
         {ok, LangAtom} -> LangAtom;
         {error, not_a_language} -> undefined
     end,
     Acc#{ <<"medium_language">> => Lang1 };
-props_filter(<<"language">>, Langs, Acc, _Context) ->
+props_filter(<<"language">>, Langs, Acc, _RscUpd, _Context) ->
     Acc#{ <<"language">> => filter_languages(Langs) };
-props_filter(<<"crop_center">>, CropCenter, Acc, _Context) when ?is_empty(CropCenter) ->
+props_filter(<<"crop_center">>, CropCenter, Acc, _RscUpd, _Context) when ?is_empty(CropCenter) ->
     Acc#{ <<"crop_center">> => undefined };
-props_filter(<<"crop_center">>, CropCenter, Acc, _Context) ->
+props_filter(<<"crop_center">>, CropCenter, Acc, _RscUpd, _Context) ->
     CropCenter1 = case z_string:trim(CropCenter) of
         <<>> -> undefined;
         Trimmed ->
@@ -1507,17 +1943,52 @@ props_filter(<<"crop_center">>, CropCenter, Acc, _Context) ->
             end
     end,
     Acc#{ <<"crop_center">> => CropCenter1 };
-props_filter(<<"privacy">>, Privacy, Acc, _Context) when ?is_empty(Privacy) ->
+props_filter(<<"privacy">>, Privacy, Acc, _RscUpd, _Context) when ?is_empty(Privacy) ->
     Acc#{ <<"privacy">> => undefined };
-props_filter(<<"privacy">>, Privacy, Acc, _Context) ->
+props_filter(<<"privacy">>, Privacy, Acc, _RscUpd, _Context) ->
     P = try
             z_convert:to_integer(Privacy)
         catch
             _:_ -> undefined
         end,
     Acc#{ <<"privacy">> => P };
-props_filter(P, V, Acc, _Context) ->
+props_filter(P, V, Acc, _RscUpd, _Context) ->
     Acc#{ P => V }.
+
+unicode_characters_to_binary(Path) ->
+    case unicode:characters_to_binary(Path) of
+        Bin when is_binary(Bin) -> Bin;
+        {error, Bin, _} -> Bin;
+        {incomplete, Bin, _} -> Bin
+    end.
+
+-spec normalize_page_path(Path, IsEncoded) -> binary() when
+    Path :: binary(),
+    IsEncoded :: boolean().
+normalize_page_path(<<>>, _IsEncoded) -> <<>>;
+normalize_page_path(Path, true) ->
+    try
+        Path1 = z_url:url_decode(Path),
+        normalize_page_path(Path1)
+    catch
+        _:_ ->
+            % Reject improper encoded page paths
+            <<>>
+    end;
+normalize_page_path(Path, false) ->
+    normalize_page_path(Path).
+
+-spec normalize_page_path(Path) -> binary() when
+    Path :: binary() | string() | undefined.
+normalize_page_path(undefined) -> <<>>;
+normalize_page_path(<<>>) -> <<>>;
+normalize_page_path("") -> <<>>;
+normalize_page_path(Path) ->
+    Path1 = z_string:trim(z_string:trim(Path), $/),
+    Path2 = iolist_to_binary([
+        $/, z_url:url_path_encode(Path1)
+    ]),
+    binary:replace(Path2, [ <<"&">>, <<"=">> ], <<"-">>, [ global ]).
 
 
 %% Filter all given languages, drop unknown languages.
@@ -1562,7 +2033,7 @@ generate_slug(Id, Props, Context) ->
 
 
 %% @doc Fill in some defaults for empty props on insert.
-props_defaults(Props, Context) ->
+props_defaults(Props, Options, Context) ->
     % Generate slug from the title (when there is a title)
     Props1 = case maps:find(<<"title_slug">>, Props) of
         error ->
@@ -1585,10 +2056,15 @@ props_defaults(Props, Context) ->
             Props
     end,
     % Assume content is authoritative, unless stated otherwise
-    case maps:get(<<"is_authoritative">>, Props1, undefined) of
+    Props2 = case maps:get(<<"is_authoritative">>, Props1, undefined) of
         undefined -> Props1#{ <<"is_authoritative">> => true };
-        _ -> Props
-    end.
+        _ -> Props1
+    end,
+    % Default timezone of resource to options or request
+    Props2#{
+        <<"tz">> => timezone(undefined, Props2, Options, Context)
+    }.
+
 
 props_filter_protected(Props, RscUpd) ->
     IsNormalUpdate = is_normal_update(RscUpd),
@@ -1647,6 +2123,7 @@ is_protected(<<"page_url">>, _IsNormal) -> true;
 is_protected(<<"page_url_abs">>, _IsNormal) -> true;
 is_protected(<<"alternate_page_url">>, _IsNormal) -> true;
 is_protected(<<"alternate_page_url_abs">>, _IsNormal) -> true;
+is_protected(<<"email_raw">>, _IsNormal) -> true;
 is_protected(<<"medium">>, _IsNormal) -> true;
 is_protected(<<"pivot_", _binary>>, _IsNormal) -> true;
 is_protected(<<"computed_", _/binary>>, _IsNormal) -> true;
@@ -1670,22 +2147,20 @@ is_trimmable(<<"rsc_id">>, _) -> true;
 is_trimmable(_, _) -> false.
 
 
-update_page_path_log(RscId, OldProps, NewProps, Context) ->
-    Old = maps:get(<<"page_path">>, OldProps, undefined),
-    New = maps:get(<<"page_path">>, NewProps, not_updated),
-    case {Old, New} of
-        {_, not_updated} ->
-            ok;
-        {Old, Old} ->
-            %% not changed
-            ok;
-        {undefined, _} ->
-            %% no old page path
-            ok;
-        {Old, New} ->
-            %% update
-            z_db:q("DELETE FROM rsc_page_path_log WHERE page_path = $1 OR page_path = $2", [New, Old],
-                Context),
-            z_db:q("INSERT INTO rsc_page_path_log(id, page_path) VALUES ($1, $2)", [RscId, Old], Context),
-            ok
-    end.
+update_page_path_log(RscId, OldProps, #{ <<"page_path">> := NewPath }, Context) ->
+    Old = page_paths(maps:get(<<"page_path">>, OldProps, undefined)),
+    New = page_paths(NewPath),
+    % Store dropped page paths
+    lists:foreach(
+        fun(P) ->
+            z_db:q("
+                INSERT INTO rsc_page_path_log(id, page_path)
+                VALUES ($1, $2)
+                ON CONFLICT (page_path) DO UPDATE
+                SET id = EXCLUDED.id",
+                [RscId, P],
+                Context)
+        end,
+        Old -- New);
+update_page_path_log(_RscId, _OldProps, _NewProps, _Context) ->
+    ok.

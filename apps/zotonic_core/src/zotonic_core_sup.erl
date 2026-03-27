@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2024 Marc Worrell
+%% @copyright 2009-2025 Marc Worrell
 %% @doc Supervisor for the zotonic application, started by zotonic_launcher.
 %% @end
 
-%% Copyright 2009-2024 Marc Worrell
+%% Copyright 2009-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@
 
 %% @doc Start the main zotonic supervisor and some helpers. The zotonic_core:setup/1 function
 %% must be called before starting this supervisor. The setup is normally called by zotonic_launcher.
--spec start_link(list()) -> {ok, pid()}.
+-spec start_link(list()) -> supervisor:startlink_ret().
 start_link(Options) ->
     lists:foreach(
         fun({K,V}) -> application:set_env(zotonic_core, K, V) end,
@@ -53,6 +53,7 @@ start_link(Options) ->
 init([]) ->
     log_start_warnings(),
     z_filehandler:start_observers(),
+    z_nonce:init_nonce_tables(),
     LogBufferSize = z_config:get(log_http_buffer_size),
     Processes = [
         % Ring buffer for http request logs
@@ -107,7 +108,7 @@ ensure_job_queues() ->
         [
             {regulators, [
                 {counter, [
-                    {limit, 3},
+                    {limit, z_config:get(media_resizer_limit)},
                     {modifiers, [{cpu, 1}]}
                 ]}
             ]}

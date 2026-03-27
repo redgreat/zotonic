@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2012 Marc Worrell
 %% @doc Escapes a text and makes 'nofollow' links of any url.
+%% @end
 
 %% Copyright 2012 Marc Worrell
 %%
@@ -17,6 +18,29 @@
 %% limitations under the License.
 
 -module(filter_escape_link).
+-moduledoc("
+Convert any URLs in a plaintext into HTML links, with adding the `rel=\"nofollow\"` attribute, and replaces all newlines
+with `<br\\>` tags.
+
+Example:
+
+
+```django
+{{ \"Hello http://foo.bar/\\n\\nAnd bye.\"|escape_link }}
+```
+
+Outputs:
+
+
+```django
+\"Hello <a href=\"http://foo.bar/\" rel=\"noopener nofollow noreferrer\">http://foo.bar/</a><br /><br />And bye.\"
+```
+
+This filter is very useful when displaying user-generated plaintexts, like comments.
+
+See also
+
+[urlize](/id/doc_template_filter_filter_urlize)").
 
 -export([escape_link/2]).
 

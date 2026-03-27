@@ -30,7 +30,7 @@
                             {% catinclude "_rsc_edge_item.tpl" s_id %}
                         </a>
                         {% wire id=#edit.index
-                            action={dialog_edit_basics id=s_id}
+                            action={dialog_edit_basics id=s_id update_element=#edit.index template="_rsc_edge_item.tpl" is_update}
                         %}
                     </div>
                 </li>
@@ -50,6 +50,8 @@
     {% endif %}
 
     <div class="form-group">
-       <a class="btn btn-default btn-sm" href="{% url admin_edges qhasobject=id %}"><i class="glyphicon glyphicon-list"></i> {_ View all referrers _}</a>
+        <a class="btn btn-default btn-sm" href="{% url admin_edges qhasobject=id %}">
+            →○ {_ View all referrers _}
+        </a>
     </div>
 {% endblock %}

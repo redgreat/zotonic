@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2020 Marc Worrell
+%% @copyright 2020-2026 Marc Worrell
 %% @doc Model for server side data storage.
+%% @end
 
-%% Copyright 2020 Marc Worrell
+%% Copyright 2020-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,24 @@
 %% limitations under the License.
 
 -module(m_server_storage).
+-moduledoc("
+Model to access the server side storage of data.
+
+See the module documentation of [mod_server_storage](/id/doc_module_mod_server_storage) for information.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/` | Return all non-secure server-storage key/value pairs for the current session id via `z_server_storage:lookup/2`. No further lookups. |
+| `get` | `/+key/...` | Return value for session key `+key` from non-secure server storage (or `not_found/no_session` error). |
+| `post` | `/+key` | Store payload under session key `+key` in non-secure server storage; starts storage for the session when missing. No further lookups. |
+| `delete` | `/+key` | Delete key `+key` from non-secure server storage for the current session. No further lookups. |
+| `delete` | `/` | Delete all non-secure server-storage keys for the current session. No further lookups. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 
 -behaviour(zotonic_model).
 
@@ -56,13 +75,13 @@ m_get([ Key | Rest ], _Msg, Context) ->
             Error
     end.
 
--spec m_post( list( binary() ), zotonic_model:opt_msg(), z:context() ) -> {ok, term()} | {error, term()}.
+-spec m_post( list( binary() ), zotonic_model:opt_msg(), z:context() ) -> zotonic_model:post_return().
 m_post([ Key ], #{ payload := Payload }, Context) ->
     store(Key, Payload, Context);
 m_post(_Path, _Msg, _Context) ->
     {error, unknown_path}.
 
--spec m_delete( list( binary() ), zotonic_model:opt_msg(), z:context() ) -> {ok, term()} | {error, term()}.
+-spec m_delete( list( binary() ), zotonic_model:opt_msg(), z:context() ) -> zotonic_model:delete_return().
 m_delete([ Key ], _Msg, Context) ->
     delete(Key, Context);
 m_delete([], _Msg, Context) ->
@@ -197,7 +216,7 @@ secure_lookup(Key, Context) ->
     end.
 
 %% @doc Delete a key from the session, without access via the model access functions.
--spec secure_delete( term(), z:context() ) -> {ok, term()} | {error, no_session | not_found | term()}.
+-spec secure_delete( term(), z:context() ) -> ok | {error, no_session | not_found | term()}.
 secure_delete(Key, Context) ->
     case z_context:session_id(Context) of
         {ok, Sid} ->

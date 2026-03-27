@@ -1,7 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2009 Marc Worrell
-%% Date: 2009-11-29
 %% @doc Cancel a mailing list subscription.
+%% @end
 
 %% Copyright 2009 Marc Worrell
 %%
@@ -18,6 +18,16 @@
 %% limitations under the License.
 
 -module(action_mailinglist_mailinglist_unsubscribe).
+-moduledoc("
+Cancel a mailing list subscription. The recipient id is given with the `id` argument.
+
+The `on_success` argument decides which actions are triggered after unsubscribe is successful; `on_error` actions are
+triggered when unsubscribe fails.
+
+Todo
+
+Extend documentation
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 %% interface functions

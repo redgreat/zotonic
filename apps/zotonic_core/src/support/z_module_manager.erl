@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2023 Marc Worrell
+%% @copyright 2009-2025 Marc Worrell
 %% @doc Module manager, starts/restarts a site's modules.
 %% @end
 
-%% Copyright 2009-2023 Marc Worrell
+%% Copyright 2009-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@
 
 %% API exports
 -export([
+    env_backup_modules/0,
     upgrade/1,
     upgrade_await/1,
     deactivate/2,
@@ -39,11 +40,13 @@
     module_reloaded/2,
     active/1,
     active/2,
+    active_not_running/1,
     active_dir/1,
     lib_dir/1,
     module_to_app/1,
     is_provided/2,
     get_provided/1,
+    get_uninstalled/1,
     scan_provided/1,
     scan_depending/1,
     get_modules/1,
@@ -65,6 +68,7 @@
     mod_description/1,
     mod_author/1,
     mod_schema/1,
+    mod_config/1,
     reinstall/2,
     sidejob_finish_start/1
 ]).
@@ -136,11 +140,23 @@
 %%====================================================================
 %% API
 %%====================================================================
-%% @spec start_link(SiteProps::proplist()) -> {ok,Pid} | ignore | {error,Error}
+-spec start_link(Site) -> {ok,Pid} | ignore | {error, Error} when
+    Site :: atom(),
+    Pid :: pid(),
+    Error :: term().
 %% @doc Starts the module manager
 start_link(Site) ->
     gen_server:start_link({local, name(Site)}, ?MODULE, Site, []).
 
+%% @doc List of modules enabled for backup sites.
+-spec env_backup_modules() -> list( atom() ).
+env_backup_modules() ->
+    [
+        mod_cron,
+        mod_base,
+        mod_filestore,
+        mod_backup
+    ].
 
 %% @doc Reload the list of all modules, add processes if necessary.
 -spec upgrade( z:context() ) -> ok.
@@ -269,7 +285,8 @@ activate(Module, IsSync, #context{site=Module} = Context) ->
 activate(Module, IsSync, Context) ->
     flush(Context),
     case proplists:is_defined(Module, scan(Context)) of
-        true -> activate_1(Module, IsSync, Context);
+        true ->
+            activate_1(Module, IsSync, Context);
         false ->
             ?zError(
                 "Could not find module '~p'",
@@ -279,6 +296,19 @@ activate(Module, IsSync, Context) ->
     end.
 
 activate_1(Module, IsSync, Context) ->
+    case m_site:environment(Context) of
+        backup ->
+            case lists:member(Module, env_backup_modules()) of
+                true ->
+                    activate_2(Module, IsSync, Context);
+                false ->
+                    {error, not_found}
+            end;
+        _Env ->
+            activate_2(Module, IsSync, Context)
+    end.
+
+activate_2(Module, IsSync, Context) ->
     F = fun(Ctx) ->
             case z_db:q("
                 update module
@@ -309,55 +339,64 @@ activate_1(Module, IsSync, Context) ->
         false -> upgrade(Context)
     end.
 
+is_module_activated(Module, Context) ->
+    case m_site:environment(Context) of
+        backup ->
+            lists:member(Module, env_backup_modules());
+        _Env ->
+            z_convert:to_bool(
+                z_db:q1("
+                    select is_active
+                    from module
+                    where name = $1",
+                    [Module],
+                    Context))
+    end.
 
 %% @doc Restart a module, activates the module if it was not activated.
 -spec restart(Module::atom(), #context{}) -> ok | {error, not_found}.
 restart(Module, Context) ->
-    case z_db:q1("
-            select is_active
-            from module
-            where name = $1",
-            [Module],
-            Context)
-    of
+    Env = m_site:environment(Context),
+    case is_module_activated(Module, Context) of
         true -> gen_server:cast(name(Context), {restart_module, Module});
-        _ -> activate(Module, Context)
+        false when Env =:= backup -> {error, not_found};
+        false -> activate(Module, Context)
     end.
 
 %% @doc Check all observers of a module, ensure that they are all active.
 %%      Used after a module has been reloaded
 -spec module_reloaded(Module::atom(), #context{}) -> ok.
 module_reloaded(Module, Context) ->
-    case z_db:q1("
-        select is_active
-        from module
-        where name = $1",
-        [Module],
-        Context)
-    of
+    case is_module_activated(Module, Context) of
         true -> gen_server:cast(name(Context), {module_reloaded, Module});
         _ -> ok
     end.
 
+
 %% @doc Return the list of active modules.
 -spec active(#context{}) -> list(Module::atom()).
 active(Context) ->
-    case z_db:has_connection(Context) of
-        true ->
-            F = fun() ->
-                Modules = z_db:q("
-                        select name
-                        from module
-                        where is_active = true
-                        order by name",
-                        Context),
-                [ z_convert:to_atom(M) || {M} <- Modules ]
-            end,
-            z_depcache:memo(F, {?MODULE, active, z_context:site(Context)}, Context);
-        false ->
-            case m_site:get(modules, Context) of
-                L when is_list(L) -> L;
-                _ -> []
+    case m_site:environment(Context) of
+        backup ->
+            env_backup_modules();
+        _Env ->
+            case z_db:has_connection(Context) of
+                true ->
+                    F = fun() ->
+                        Modules = z_db:q("
+                                select name
+                                from module
+                                where is_active = true
+                                order by name",
+                                Context),
+                        [ z_convert:to_atom(M) || {M} <- Modules ]
+                    end,
+                    z_depcache:memo(F, {?MODULE, active, z_context:site(Context)}, Context);
+                false ->
+                    case m_site:get(modules, Context) of
+                        L when is_list(L) -> L;
+                        _ -> []
+                    end
             end
     end.
 
@@ -369,35 +408,49 @@ active(Module, Context) ->
     case z_db:has_connection(Context) of
         true ->
             F = fun() ->
-                case z_db:q1("
-                    select is_active
-                    from module
-                    where name = $1",
-                    [Module],
-                    Context)
-                of
-                    true -> true;
-                    false -> false;
-                    undefined -> false
-                end
+                is_module_activated(Module, Context)
             end,
             z_depcache:memo(F, {?MODULE, {active, Module}, z_context:site(Context)}, Context);
         false ->
             lists:member(Module, active(Context))
     end.
 
-
-%% @doc Return the list of all active modules and their directories
--spec active_dir(z:context()) -> [ {Module::atom(), Dir::file:filename_all()} ].
-active_dir(Context) ->
-    lists:foldr(
-        fun(Module, Acc) ->
-            case lib_dir(Module) of
-                {error, bad_name} -> Acc;
-                Dirname when is_list(Dirname) -> [ {Module, Dirname} | Acc ]
+%% @doc Check which modules are active and installed but currently not in running state.
+%% The site is hardcoded as it must be part of the running list of modules, if not then
+%% it is added to the list of not running modules irrespective if it is activated or not.
+-spec active_not_running(Context) -> [ Module ] when
+    Context :: z:context(),
+    Module :: atom().
+active_not_running(Context) ->
+    Status = get_modules_status(Context),
+    Active = active_dir(Context),
+    Active1 = case lists:keymember(z_context:site(Context), 1, Active) of
+        true -> Active;
+        false -> [ {z_context:site(Context), undefined} | Active ]
+    end,
+    lists:filtermap(
+        fun({M, _Dir}) ->
+            case proplists:get_value(M, Status) of
+                running -> false;
+                _ -> {true, M}
             end
         end,
-        [],
+        Active1).
+
+
+%% @doc Return the list of all active modules and their directories. Exclude modules that
+%% are missing from the system.
+-spec active_dir(z:context()) -> [ {Module::atom(), Dir::file:filename_all()} ].
+active_dir(Context) ->
+    lists:filtermap(
+        fun(Module) ->
+            case lib_dir(Module) of
+                {error, bad_name} ->
+                    false;
+                Dirname when is_list(Dirname) ->
+                    {true, {Module, Dirname}}
+            end
+        end,
         active(Context)).
 
 -spec lib_dir(atom()) -> {error, bad_name} | file:filename().
@@ -449,6 +502,18 @@ is_provided(Service, Context) ->
 get_provided(Context) ->
     gen_server:call(name(Context), get_provided).
 
+%% @doc Return the list of all modules that are activated but not present on
+%% the file system.
+-spec get_uninstalled( z:context() ) -> list( atom() ).
+get_uninstalled(Context) ->
+    lists:filtermap(
+        fun(Module) ->
+            case lib_dir(Module) of
+                {error, bad_name} -> {true, Module};
+                _Dirname -> false
+            end
+        end,
+        active(Context)).
 
 %% @doc Return a table with per provision which modules provide it.
 -spec scan_provided( z:context() ) -> #{ atom() := [ atom() ]}.
@@ -507,12 +572,16 @@ whereis(Module, Context) ->
 %% @doc Return the list of all modules in the database.
 -spec all(z:context()) -> [ atom() ].
 all(Context) ->
-    Modules = z_db:q("
-            select name
-            from module
-            order by name",
-            Context),
-    [ z_convert:to_atom(M) || {M} <- Modules ].
+    case m_site:environment(Context) of
+        backup -> env_backup_modules();
+        _ ->
+            Modules = z_db:q("
+                    select name
+                    from module
+                    order by name",
+                    Context),
+            [ z_convert:to_atom(M) || {M} <- Modules ]
+    end.
 
 
 %% @doc Scan for a list of modules and the current site. A module is always an OTP application,
@@ -696,7 +765,7 @@ mod_info(Module) ->
 
 -spec mod_version(Module) -> Version when
     Module :: atom() | binary() | string(),
-    Version :: binary().
+    Version :: binary() | undefined.
 mod_version(Module) ->
     App = module_to_app(Module),
     case application:get_key(App, vsn) of
@@ -705,7 +774,10 @@ mod_version(Module) ->
         {ok, "git"} ->
             app_git_version(App);
         {ok, Vsn} ->
-            unicode:characters_to_binary(Vsn, utf8);
+            case unicode:characters_to_binary(Vsn, utf8) of
+                B when is_binary(B) -> B;
+                _ -> <<>>
+            end;
         undefined ->
             app_git_version(App)
     end.
@@ -724,28 +796,8 @@ maybe_git_version(LibDir) ->
     GitDir = filename:join(LibDir, ".git"),
     case filelib:is_dir(GitDir) of
         true ->
-            git_version(LibDir);
+            z_utils:git_version(LibDir);
         false ->
-            undefined
-    end.
-
-git_version(LibDir) ->
-    Cmd = "git rev-parse --short HEAD",
-    case exec:run(Cmd, [sync, stdout, {cd, LibDir}]) of
-        {ok, Res} ->
-            {stdout, Hash} = proplists:lookup(stdout, Res),
-            iolist_to_binary([
-                "git-", z_string:trim(unicode:characters_to_binary(Hash))
-            ]);
-        {error, Reason} ->
-            ?LOG_WARNING(#{
-                in => zotonic_core,
-                text => <<"Git rev-parse for module version failed">>,
-                cmd => unicode:characters_to_binary(Cmd),
-                lib_dir => LibDir,
-                result => error,
-                reason => Reason
-            }),
             undefined
     end.
 
@@ -801,18 +853,40 @@ mod_schema(Module) ->
         _M:_E -> undefined
     end.
 
+%% @doc Get the configurations of a module.
+-spec mod_config(Module) -> ConfigList when
+    Module :: atom() | binary() | string(),
+    ConfigList :: [ map() ].
+mod_config(Module) ->
+    Mod = module_to_mod(Module),
+    try
+        {mod_config, Configs} = proplists:lookup(mod_config, Mod:module_info(attributes)),
+        lists:map(
+            fun
+                (#{ module := _ } = C) -> C;
+                (C) -> C#{ module => Mod }
+            end,
+            Configs)
+    catch
+        _M:_E -> []
+    end.
+
+
 db_schema_version(M, Context) ->
     z_db:q1("SELECT schema_version FROM module WHERE name = $1", [M], Context).
 
 set_db_schema_version(M, V, Context) ->
-    1 = z_db:q("UPDATE module SET schema_version = $1 WHERE name = $2", [V, M], Context),
+    _ = z_db:q("UPDATE module SET schema_version = $1 WHERE name = $2", [V, M], Context),
     ok.
 
 
 bin(A) when is_atom(A) ->
     atom_to_binary(A, utf8);
 bin(A) when is_list(A) ->
-    unicode:characters_to_binary(A);
+    case unicode:characters_to_binary(A) of
+        B when is_binary(B) -> B;
+        _ -> <<>>
+    end;
 bin(A) when is_binary(A) ->
     A.
 

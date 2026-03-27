@@ -18,6 +18,21 @@
 %% limitations under the License.
 
 -module(action_wires_remove_class).
+-moduledoc("
+Remove a CSS class from an HTML element.
+
+Example:
+
+
+```django
+{% button action={remove_class target=\"myid\" class=\"newclass\"} %}
+```
+
+Removes the CSS class “newclass” from the element with HTML id “myid”.
+
+See also
+
+actions [add_class](/id/doc_template_action_action_add_class) and [toggle_class](/id/doc_template_action_action_toggle_class).").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_action/4]).
 

@@ -1,9 +1,9 @@
-%% @copyright 2024 Driebit BV
+%% @copyright 2024-2026 Driebit BV
 %% @doc Add a panel to the admin to manage the copyright and
 %% attribution of resources.
 %% @end
 
-%% Copyright 2024 Driebit BV
+%% Copyright 2024-2026 Driebit BV
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,12 +18,34 @@
 %% limitations under the License.
 
 -module(mod_copyright).
+-moduledoc("
+Module for copyright metadata, rights statements, and attribution helpers.
+
+").
 
 -mod_title("Copyright").
 -mod_description("Add copyrights and attribution to resources").
 -mod_prio(500).
+-mod_config([
+        #{
+            key => rights,
+            type => string,
+            default => "CR",
+            description => "The default copyrights for this site. Defaults to CR (All Rights Reserved)."
+        },
+        #{
+            key => attribution,
+            type => string,
+            default => "",
+            description => "The default copyright attribution for this site. Defaults to the title of the site."
+        },
+        #{
+            key => year,
+            type => integer,
+            default => "",
+            description => "The default copyright year for this site. Defaults to the current year."
+        }
+    ]).
 
 -export([
 ]).
-
--include_lib("zotonic_core/include/zotonic.hrl").

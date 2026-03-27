@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2024 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Model for resource data. Interfaces between zotonic, templates and the database.
 %% @end
 
-%% Copyright 2009-2024 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,156 @@
 %% limitations under the License.
 
 -module(m_rsc).
+-moduledoc("
+The main resource model, which is the central part of the [Zotonic data
+model](/id/doc_userguide_datamodel#guide-datamodel). This model provides an interface to all resource (\"page\")
+information. It also provides an easy way to fetch edges from pages without needing to use the
+[m_edge](/id/doc_model_model_edge) model.
+
+
+
+Properties of the resource model
+--------------------------------
+
+A resource has the following properties accessible from the templates:
+
+| Property                    | Description                                                                      | Example value                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| id | Id of the page, an integer. | `42` |
+| title | Title of the page. Returns a binary. | `<<\"Breaking News\">>` |
+| short_title | Short title of the page. Used in menus. Returns a binary. | `<<\"News!\">>` |
+| summary | Summary of the page. Returns a binary or undefined. | `<<\"Page summary.\">>` |
+| body | The HTML body of a page. Returns a binary or undefined. | `<<\"&lt;p>Hello</p>\">>` |
+| date_start | Start date when the page has a period. Examples are events or the birth date of a person. Returns a datetime tuple or undefined. | `{{2008,12,10},{15,30,00}}` |
+| date_end | End date when the page has a period. Returns a datetime tuple or undefined. When there is a start date then there is also an end date. | `{{2009,12,5},{23,59,59}}` |
+| name | Unique name of the page. Returns a binary or undefined. Valid characters are a-z, 0-9 and _ | `<<\"page_home\">>` |
+| page_path | Unique path of the page, used for url generation. Returns a binary or undefined. Valid characters are a-z, 0-9, / and - | `<<\"/\">>` |
+| is_page_path_multiple | Allow the page to be served on multiple URLs | `false` |
+| page_url | The url of the page. Derived using the page's category, the page id and its slug. Returns a non flattened list. Returns the binary page_path when it is set.  The additional parameter `with` can be used to pass extra (optional) query arguments to the url, for instance:  `{{ id.page_url with t=now\\|date:\"U\" }}`  `{{ id.page_url with t=\"new\" u=m.acl.user.id }}` | `<<\"/blog/42\">>` |
+| page_url_abs | The absolute url of the page. Same as `page_url` but then with added protocol, hostname and port. | `<<\"<http://example.org/blog/42>\">>` |
+| default_page_url | The page without considering its page_path setting. | `<<\"/page/42/my-slug\">>` |
+| is_authoritative | Whether this page originated on this site or is imported and maintained on another site. Return a boolean. | `true` |
+| uri | The absolute unique uri of this resource. Refers to the \"id\" dispatch rule for authoritative (local) resources. Returns a binary. | `<<\"<http://example.com/id/42>\">>` |
+| category_id | Id of the category the page belongs to. Returns an integer. | `102` |
+| category | Category record the page belongs to. Returns a property list. | `[{id,102},{parent_id,undefined], ... ,{name, <<\"person\">>}]` |
+| seo_noindex | Whether to let search engines index this page. Returns a boolean or undefined. | `false` |
+| slug | Slug used for url generation, appended to page urls. Binary or undefined. Valid characters are a-z, 0-9 and - | `<<\"the-world-is-flat\">>` |
+| seo_desc | Page description for search engines. Returns a binary or undefined. | `<<\"The truth about the world's shape\">>` |
+| is_me | Check if this page is the current user's person page. Returns a boolean. | `false` |
+| is_visible | Check if this page is visible for the current user. Returns a boolean. | `true` |
+| is_editable | Check if this page is editable by the current user. Returns a boolean. | `false` |
+| is_linkable | Check if this page can be connected to another page. Returns a boolean. | `false` |
+| is_ingroup | Check if the current user is a member of the group the page belongs to. Returns a boolean. | `true` |
+| exists | Check if the page exists. Useful when checking if a named page is present or not. Returns a boolean. | `true` |
+| is_a | Returns a list of the category hierarchy the page belongs to. The list is suitable for indexing with category atoms.  Example usage: `{{ m.rsc[id].is_a.article }}` | `[{text,true}, {article,true}]` |
+| is_cat | Direct check if a page is a certain category. More efficient then is_a.  Example usage: `{{ m.rsc[id].is_cat.person }}` | `true` |
+| is_featured | If featured checked or not. Returns a boolean | `false` |
+| is_protected | If this page is protected from deletion. Returns a boolean.  Resources are protected by a simple table called `protect` that prevents accidental deletions of rsc records. It does this by having a foreign key constraint that prohibits the deletion of the referred rsc record. | `false` |
+| is_dependent | If set to *true* then this page should only exist if there are incoming edges to this page. This flag is checked when an edge is deleted. | `true` |
+| is_published | If this page has been published. Returns a boolean | `true` |
+| publication_start | Start date of the publication period. Returns a datetime tuple. | `{{2009,12,24},{9,0,0}}` |
+| publication_end | End date of the publication period. Returns a datetime tuple. | `{{9999,8,17},{12,0,0}}` |
+| is_published_date | If this page is published and the current date/time is within the set publication_start/end range. Note that no ACL checks are performed, use is_visible to check if a resource is visible for the current user. | `true` |
+| visible_for | Visibility level. Returns an integer. The actual meaning depends on the active ACL module. | `0` |
+| content_group_id | Content group this resource belongs to. Defaults to the id of the content group named *default_content_group* or *system_content_group* for resources within the *meta* category. See [mod_content_groups](/id/doc_module_mod_content_groups) | `31415` |
+| o | Used to access the objects of page: the pages this page refers to. Returns a function which should be indexed with the edge's predicate name (atom). When indexed the function will return a list of integers.  Example usage: `{{ m.rsc[id].o.author[1].title }}`  This returns the first author that is linked from this page. | `fun(Predicate,Context)` |
+| s | Access the subjects of a page: the pages that are referring to this page. Returns a function which should be indexed with the edge's predicate name (atom). When indexed the function will return a list of integers.  Example usage: `{{ m.rsc[id].s.author[1].title }}`  This returns the first article that links to me with a author connection. | `fun(Predicate,Context)` |
+| op | Returns a list of all predicates on edges from this page. The predicates are atoms. | `[about, related]` |
+| sp | Returns a list of all predicates on edges to this page. The predicates are atoms. | `[author]` |
+| predicates_edit | Returns a list of all allowed predicates from this page. Used for editing the page. Returns a list of predicate ids (in contrast with the atoms of op and sp). | `[308,300,304,303,302,300]` |
+| media | Return a list of all media ids connected to the page. The media are connected with the predicate \"depiction\". | `[842,3078]` |
+| medium | Return a property list describing the file or medium attached to the page. A medium record is present for pages that are an image, video etc. Returns undefined when there is no medium defined. See the model m_media for more information. | `[ {id,512}, {filename, <<\"2009/1...\">>}, ... ]` |
+| depiction | Return the medium record that can be used for the image of a page. Either returns a medium page attached to the page or the medium record of the page itself. When no medium is found then undefined is returned. | `[ {id,512}, {filename, <<\"2009/1...\">>}, ... ]` |
+| image_url | An url of the depiction, using the mediaclass `image` defined in mod_base | `<<\"/image/...\">>` |
+| image_url_abs | The absolute `image_url`, that is including https: | `<<\"<http://example.com//>...\">>` |
+| thumbnail_url | An url of the depiction, using the mediaclass  `thumbnail` defined in mod_base | `<<\"/image/...\">>` |
+| thumbnail_url_abs | The absolute `thumbnail_url`, including https: | `<<\"<http://example.com//>...\">>` |
+| email | E-mail address. Returns a binary or undefined. | `<<\"[me@example.com](mailto:me%40example.com)\">>` |
+| website | URL of a website. Returns a binary or undefined. | `<<\"<http://zotonic.com>\">>` |
+| is_website_redirect | Tell *controller_page* to redirect to the website URL instead of showing the HTML page. | `false` |
+| phone | Phone number. Returns a binary or undefined. | `<<\"+31201234567\">>` |
+| phone_alt | Alternative phone number. Returns a binary or undefined. | `undefined` |
+| phone_emergency | Phone number to call in emergencies. | `<<\"112\">>` |
+| address_street_1        | Address line 1. Returns a binary or undefined.                                   |                                                                               |
+| address_street_2        | Address line 2. Returns a binary or undefined.                                   |                                                                               |
+| address_city              | City part of address. Returns a binary or undefined.                             |                                                                               |
+| address_postcode          | Postcode part of address. Returns a binary or undefined.                         |                                                                               |
+| address_state             | State part of address. Returns a binary or undefined.                            |                                                                               |
+| address_country           | Country part of address. Returns a binary or undefined.                          |                                                                               |
+| mail_street_1           | Mailing address line 1. Returns a binary or undefined.                           |                                                                               |
+| mail_street_2           | Mailing address line 2. Returns a binary or undefined.                           |                                                                               |
+| mail_city                 | City part of mailing address. Returns a binary or undefined.                     |                                                                               |
+| mail_postcode             | Postcode part of mailing address. Returns a binary or undefined.                 |                                                                               |
+| mail_state                | State part of mailing address. Returns a binary or undefined.                    |                                                                               |
+| mail_country              | Country part of mailing address. Returns a binary or undefined.                  |                                                                               |
+| name_first                | First name of person. Returns a binary or undefined.                             |                                                                               |
+| name_middle               | Middle name of person. Returns a binary of undefined.                            |                                                                               |
+| name_surname_prefix | Prefix for the surname of a person. Returns a binary or undefined. | `<<\"van der\">, <<\"von\">>` |
+| name_surname              | Surname or family name of person. Returns a binary or undefined.                 |                                                                               |
+
+
+
+Escaping
+--------
+
+All strings that are stored inside resources are automatically HTML escaped. This means that these texts do not require
+any processing when they are being displayed in the browser, which causes major performance gains.
+
+There are some fields in the resource that are exceptions to these rule, namely, the `body` field and any fields whose
+name ends in `_html`. These fields are assumed to contain HTML text and are sanitized on save instead of escaped.
+
+
+
+Dates
+-----
+
+Dates are stored as a standard Erlang date time tuple, for example `{{2008,12,10},{15,30,00}}`. Dates are stored and
+retrieved in UTC (universal time). When displaying a date, (e.g. with the [date](/id/doc_template_filter_filter_date)
+filter), the date is automatically converted into the time zone of the site or that of the user.
+
+
+
+Printing all properties of a resource
+-------------------------------------
+
+In your templates, you can loop over the properties of a resource like this:
+
+
+```erlang
+{% for k,v in m.rsc[id] %}
+  {{ k }} - {{ v }} <br/>
+{% endfor %}
+```
+
+And also using the [print](/id/doc_template_tag_tag_print) tag:
+
+
+```erlang
+{% print m.rsc[id] %}
+```
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/-/lookup/page_path/...` | Resolve a page-path lookup; all segments after `page_path` are joined as the path and looked up to return resource id (and redirect info when applicable). |
+| `get` | `/-/lookup/rid/+id/...` | Resolve `+id` via `rid` normalization and return the resolved resource id. |
+| `get` | `/-/lookup/name/+name/...` | Resolve resource `+name` to its id. |
+| `get` | `/+id/is_cat/+key/...` | Check whether resource `+id` is directly in category `+key`. |
+| `get` | `/+id/is_a/+cat/...` | Check whether resource `+id` is in category `+cat` (including inherited category hierarchy). |
+| `get` | `/+id/is_a` | Return the category-membership map for resource `+id`. No further lookups. |
+| `get` | `/+id/+key/...` | Fetch property `+key` from resource `+id`. |
+| `get` | `/+id` | Fetch the exported resource map for `+id`. No further lookups. |
+| `post` | `/+id` | Update existing resource `+id` with properties from the payload. No further lookups. |
+| `post` | `/` | Insert a new resource from payload properties. No further lookups. |
+| `delete` | `/+id` | Delete resource `+id`. No further lookups. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+
+See also
+
+[Resources](/id/doc_developerguide_resources#guide-datamodel-resources), [The Zotonic data model](/id/doc_userguide_datamodel#guide-datamodel), [m_edge](/id/doc_model_model_edge), [m_media](/id/doc_model_model_media), [m_rsc_gone](/id/doc_model_model_rsc_gone).").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -behaviour(zotonic_model).
@@ -45,6 +195,8 @@
     merge_delete/4,
     update/3,
     update/4,
+    update_translation/4,
+    update_translation/5,
     duplicate/3,
     duplicate/4,
     touch/2,
@@ -112,7 +264,22 @@
 -type duplicate_option() :: edges
                           | {edges, boolean()}
                           | medium
-                          | {medium, boolean()}.
+                          | {medium, boolean()}
+                          | {tz, string()|binary()}
+                          | {default_tz, string()|binary()}.
+
+-type update_options() :: list(update_option()).
+-type update_option() :: no_touch
+                       | {no_touch, boolean()}
+                       | is_escape_texts
+                       | {is_escape_texts, boolean()}
+                       | is_acl_check
+                       | {is_acl_check, boolean()}
+                       | is_import
+                       | {is_import, boolean()}
+                       | {tz, string()|binary()}
+                       | {default_tz, string()|binary()}
+                       | {expected, list({binary()|atom(), term()})}.
 
 % Range of resource id values in PostgreSQL.
 % Make larger if moving to bigint resource ids.
@@ -131,6 +298,8 @@
     props_all/0,
     props_legacy/0,
     update_function/0,
+    update_option/0,
+    update_options/0,
     duplicate_option/0,
     duplicate_options/0
 ]).
@@ -142,16 +311,16 @@ m_get([ <<"-">>, <<"lookup">>, <<"page_path">> | Path ], _Msg, Context) ->
     Path1 = iolist_to_binary(lists:join($/, Path)),
     case page_path_to_id(Path1, Context) of
         {ok, Id} ->
-            {#{
+            {ok, {#{
                 <<"id">> => Id,
                 <<"is_redirect">> => false
-            }, []};
+            }, []}};
         {redirect, Id} ->
-            {#{
+            {ok, {#{
                 <<"id">> => Id,
                 <<"is_redirect">> => true,
                 <<"page_url">> => m_rsc:p(Id, <<"page_url">>, Context)
-            }, []};
+            }, []}};
         {error, _} = Error ->
             Error
     end;
@@ -239,7 +408,7 @@ name_to_id_cat(Name, Cat, Context) ->
     z_depcache:memo(F, {rsc_name, Name, Cat}, ?DAY, [Cat], Context).
 
 %% @doc Given a page path, return {ok, Id} with the id of the found
-%% resource. When the resource does not have the page path, but did so
+%% resource. If a resource does not have the page path, but did so
 %% once, this function will return {redirect, Id} to indicate that the
 %% page path was found but is no longer the current page path for the
 %% resource.
@@ -252,7 +421,7 @@ page_path_to_id(Path, Context) ->
     Path1 = iolist_to_binary([ $/, z_string:trim(Path, $/) ]),
     case is_utf8(Path1) of
         true when size(Path1) < 200 ->
-            case z_db:q1("select id from rsc where page_path = $1", [Path1], Context) of
+            case z_db:q1("select id from rsc where pivot_page_path && $1", [ [Path1] ], Context) of
                 undefined ->
                     case z_db:q1(
                         "select id from rsc_page_path_log where page_path = $1",
@@ -412,7 +581,6 @@ get_raw(Id, IsLock, Context) when ?is_valid_rsc_id(Id) ->
             AllCols = [ z_convert:to_binary(C) || C <- z_db:column_names(rsc, Context) ],
             DataCols = lists:filter(
                 fun (<<"pivot_geocode">>) -> true;
-                    (<<"pivot_geocode_qhash">>) -> true;
                     (<<"pivot_location_lat">>) -> true;
                     (<<"pivot_location_lng">>) -> true;
                     (<<"pivot_", _/binary>>) -> false;
@@ -423,8 +591,7 @@ get_raw(Id, IsLock, Context) when ?is_valid_rsc_id(Id) ->
                 "select ",lists:join($,, DataCols),
                 " from rsc where id = $1"
             ]),
-            z_memo:set(rsc_raw_sql, Query),
-            Query;
+            z_memo:set(rsc_raw_sql, Query);
         Memo ->
             Memo
     end,
@@ -550,60 +717,111 @@ get_acl_props(Name, Context) ->
 
 
 %% @doc Insert a new resource
--spec insert(props_all(), z:context()) -> {ok, resource_id()} | {error, term()}.
+-spec insert(Props, Context) -> {ok, ResourceId} | {error, term()} when
+        Props :: props_all(),
+        Context :: z:context(),
+        ResourceId :: resource_id().
 insert(Props, Context) ->
     m_rsc_update:insert(Props, [], Context).
 
--spec insert(props_all(), list(), z:context()) -> {ok, resource_id()} | {error, term()}.
+-spec insert(Props, Options, Context) -> {ok, ResourceId} | {error, term()} when
+        Props :: props_all(),
+        Options :: update_options(),
+        Context :: z:context(),
+        ResourceId :: resource_id().
 insert(Props, Options, Context) ->
     m_rsc_update:insert(Props, Options, Context).
 
 %% @doc Delete a resource
--spec delete(resource(), z:context()) -> ok | {error, term()}.
+-spec delete(Id, Context) -> ok | {error, term()} when
+        Id :: resource(),
+        Context :: z:context().
 delete(Id, Context) ->
     m_rsc_update:delete(Id, undefined, Context).
 
--spec delete(resource(), resource(), z:context()) -> ok | {error, term()}.
+-spec delete(Id, FollowUp, Context) -> ok | {error, term()} when
+        Id :: resource(),
+        FollowUp :: resource(),
+        Context :: z:context().
 delete(Id, FollowUp, Context) ->
     m_rsc_update:delete(Id, FollowUp, Context).
 
 %% @doc Merge a resource with another, delete the loser.
--spec merge_delete(resource(), resource(), z:context()) -> ok | {error, term()}.
+-spec merge_delete(WinnerId, LoserId, Context) -> ok | {error, term()} when
+        WinnerId :: resource(),
+        LoserId :: resource(),
+        Context :: z:context().
 merge_delete(WinnerId, LoserId, Context) ->
     m_rsc_update:merge_delete(WinnerId, LoserId, [ {is_merge_trans, false} ], Context).
 
 %% @doc Merge a resource with another, delete the loser.
--spec merge_delete(resource(), resource(), list(), z:context()) -> ok | {error, term()}.
+-spec merge_delete(WinnerId, LoserId, Options, Context) -> ok | {error, term()} when
+        WinnerId :: resource(),
+        LoserId :: resource(),
+        Options :: list(),
+        Context :: z:context().
 merge_delete(WinnerId, LoserId, Options, Context) ->
     m_rsc_update:merge_delete(WinnerId, LoserId, Options, Context).
 
 %% @doc Update a resource
--spec update(
-        resource(),
-        props_all() | update_function(),
-        z:context()
-    ) -> {ok, resource()} | {error, term()}.
+-spec update(Id, PropsOrFun, Context) -> {ok, UpdatedId} | {error, term()} when
+        Id :: resource(),
+        PropsOrFun :: props_all() | update_function(),
+        Context :: z:context(),
+        UpdatedId :: resource().
 update(Id, Props, Context) ->
     m_rsc_update:update(Id, Props, Context).
 
--spec update(
-        resource(),
-        props_all() | update_function(),
-        list(),
-        z:context()
-    ) -> {ok, resource()} | {error, term()}.
+-spec update(Id, PropsOrFun, Options, Context) -> {ok, UpdatedId} | {error, term()} when
+        Id :: resource(),
+        PropsOrFun :: props_all() | update_function(),
+        Options :: update_options(),
+        Context :: z:context(),
+        UpdatedId :: resource().
 update(Id, Props, Options, Context) ->
     m_rsc_update:update(Id, Props, Options, Context).
 
+%% @doc Update translations of (possibly nested) properties for one language.
+%%      The Language is normalized via language routines and the update is
+%%      merged with existing raw resource properties.
+-spec update_translation(Id, Language, Props, Context) -> {ok, UpdatedId} | {error, term()} when
+        Id :: m_rsc:resource(),
+        Language :: z_language:language(),
+        Props :: m_rsc:props_all(),
+        Context :: z:context(),
+        UpdatedId :: m_rsc:resource_id().
+update_translation(Id, Language, Props, Context) ->
+    m_rsc_update:update_translation(Id, Language, Props, Context).
+
+%% @doc Like update_translation/4, with extra update options.
+-spec update_translation(Id, Language, Props, Options, Context) -> {ok, UpdatedId} | {error, term()} when
+        Id :: m_rsc:resource(),
+        Language :: z_language:language(),
+        Props :: m_rsc:props_all(),
+        Options :: m_rsc:update_options(),
+        Context :: z:context(),
+        UpdatedId :: m_rsc:resource_id().
+update_translation(Id, Language, Props, Options, Context) ->
+    m_rsc_update:update_translation(Id, Language, Props, Options, Context).
+
 
 %% @doc Duplicate a resource.
--spec duplicate(resource(), props_all(), z:context()) ->
-    {ok, NewId :: resource_id()} | {error, Reason :: term()}.
+-spec duplicate(Id, Props, Context) -> {ok, NewId} | {error, Reason} when
+        Id :: resource(),
+        Props :: props_all(),
+        Context :: z:context(),
+        NewId :: resource_id(),
+        Reason :: term().
 duplicate(Id, Props, Context) ->
     m_rsc_update:duplicate(Id, Props, Context).
 
--spec duplicate(resource(), props_all(), duplicate_options(), z:context()) ->
-    {ok, NewId :: resource_id()} | {error, Reason :: term()}.
+-spec duplicate(Id, Props, Options, Context) -> {ok, NewId} | {error, Reason} when
+        Id :: resource(),
+        Props :: props_all(),
+        Options :: duplicate_options(),
+        Context :: z:context(),
+        NewId :: resource_id(),
+        Reason :: term().
 duplicate(Id, Props, Options, Context) ->
     m_rsc_update:duplicate(Id, Props, Options, Context).
 
@@ -825,15 +1043,33 @@ p_no_acl(Id, <<"is_a">>, Context) -> is_a(Id, Context);
 p_no_acl(Id, <<"exists">>, Context) -> exists(Id, Context);
 p_no_acl(Id, <<"page_url_abs">>, Context) ->
     case p_no_acl(Id, <<"page_path">>, Context) of
-        undefined -> page_url(Id, true, Context);
+        undefined ->
+            page_url(Id, true, Context);
         PagePath ->
-            opt_url_abs(z_notifier:foldl(#url_rewrite{args = [{id, Id}]}, PagePath, Context), true, Context)
+            case path_for_lang(PagePath, Context) of
+                <<>> -> page_url(Id, true, Context);
+                Path ->
+                    RewriteArgs = [
+                        {id, Id}
+                        | z_context:get(extra_args, Context, [])
+                    ],
+                    opt_url_abs(z_notifier:foldl(#url_rewrite{args = RewriteArgs}, Path, Context), true, Context)
+            end
     end;
 p_no_acl(Id, <<"page_url">>, Context) ->
     case p_no_acl(Id, <<"page_path">>, Context) of
-        undefined -> page_url(Id, false, Context);
+        undefined ->
+            page_url(Id, false, Context);
         PagePath ->
-            opt_url_abs(z_notifier:foldl(#url_rewrite{args = [{id, Id}]}, PagePath, Context), false, Context)
+            case path_for_lang(PagePath, Context) of
+                <<>> -> page_url(Id, false, Context);
+                Path ->
+                    RewriteArgs = [
+                        {id, Id}
+                        | z_context:get(extra_args, Context, [])
+                    ],
+                    opt_url_abs(z_notifier:foldl(#url_rewrite{args = RewriteArgs}, Path, Context), false, Context)
+            end
     end;
 p_no_acl(Id, <<"translation">>, Context) ->
     fun(Code) ->
@@ -912,6 +1148,23 @@ p_cached_1(Id, Property, Context) ->
             end
     end.
 
+path_for_lang(undefined, _Context) ->
+    <<>>;
+path_for_lang(#trans{ tr = Tr } = PagePath, Context) ->
+    Langs = [ z_context:language(Context) ],
+    case z_trans:lookup_fallback(PagePath, Langs, Context) of
+        <<>> ->
+            case [ {Lang, Path } || {Lang, Path} <- Tr, Path =/= <<>> ] of
+                [] ->
+                    <<>>;
+                Tr1 ->
+                    z_trans:lookup_fallback(#trans{ tr = Tr1 }, Langs, Context)
+            end;
+        Path ->
+            Path
+    end;
+path_for_lang(Path, _Context) ->
+    Path.
 
 %% @doc Determine the non informational uri of a resource.
 -spec uri( resource() | undefined, z:context() ) -> binary() | undefined.
@@ -1125,7 +1378,7 @@ rid(MaybeName, Context) when is_binary(MaybeName) ->
             Id = z_convert:to_integer(MaybeName),
             if
                 ?is_valid_rsc_id(Id) -> Id;
-                true -> false
+                true -> undefined
             end;
         false ->
             case binary:match(MaybeName, <<":">>) of
@@ -1139,7 +1392,7 @@ rid(MaybeName, Context) when is_list(MaybeName) ->
             Id = z_convert:to_integer(MaybeName),
             if
                 ?is_valid_rsc_id(Id) -> Id;
-                true -> false
+                true -> undefined
             end;
         false ->
             case lists:any(fun(C) -> C =:= $: end, MaybeName) of
@@ -1157,35 +1410,33 @@ is_matching_category(ExtIsA, LocalIsA) ->
     LocalIsA1 = [ z_convert:to_binary(A) || A <- LocalIsA ],
     lists:any( fun(A) -> lists:member(A, ExtIsA1) end, LocalIsA1 ).
 
-
-%% @doc Return the id of the resource with a certain unique name.
+%% @doc Return the id of the resource with a certain unique name. If not found then
+%% return 'undefined'. The name is normalized before looking up.
 -spec name_lookup(resource_name(), z:context()) -> resource_id() | undefined.
 name_lookup(Name, Context) ->
-    try
-        z_string:to_name(Name)
-    of
-        Lower ->
-            case z_depcache:get({rsc_name, Lower}, Context) of
+    Normalized = try z_string:to_name(Name) catch _:_ -> undefined end,
+    if
+        is_binary(Normalized), Normalized =/= <<>> ->
+            case z_depcache:get({rsc_name, Normalized}, Context) of
                 {ok, undefined} ->
                     undefined;
                 {ok, Id} ->
                     Id;
                 undefined ->
-                    Id = case z_db:q1("select id from rsc where name = $1", [Lower], Context) of
+                    Id = case z_db:q1("select id from rsc where name = $1", [Normalized], Context) of
                         undefined -> undefined;
                         Value -> Value
                     end,
-                    z_depcache:set({rsc_name, Lower}, Id, ?DAY, [Id, {rsc_name, Lower}], Context),
+                    z_depcache:set({rsc_name, Normalized}, Id, ?DAY, [Id, {rsc_name, Normalized}], Context),
                     Id
-            end
-    catch
-        error:badarg ->
+            end;
+        true ->
             undefined
     end.
 
-
-%% @doc Return the id of the resource with a certain uri.
--spec uri_lookup( resource_uri() | string(), z:context()) -> resource_id() | undefined.
+%% @doc Return the id of the resource with a certain uri. Return 'undefined' if
+%% not found. The uri is taken as-is and not normalized.
+-spec uri_lookup(resource_uri() | string(), z:context()) -> resource_id() | undefined.
 uri_lookup(<<>>, _Context) ->
     undefined;
 uri_lookup(Uri, Context) when is_binary(Uri) ->
@@ -1227,6 +1478,8 @@ uri_lookup_1(Uri, Context) ->
 
 
 %% @doc Check if the hostname in an URL matches the current site
+is_local_uri(<<"/">>, _Context) ->
+    true;
 is_local_uri(<<"/", C, _/binary>>, _Context) when C =/= $/ ->
     true;
 is_local_uri(Uri, Context) ->
@@ -1241,9 +1494,15 @@ is_local_uri(Uri, Context) ->
 
 
 %% @doc Use the dispatcher to extract the id from the local URI
-local_uri_to_id(<<$/, C, _/binary>> = Path, Context) when C =/= $/ ->
-    case z_sites_dispatcher:dispatch_path(Path, Context) of
+local_uri_to_id(<<"/">> = Path, Context) ->
+    local_uri_to_id_1(Path, Context);
+local_uri_to_id(<<"/", C, _/binary>> = Path, Context) when C =/= $/ ->
+    local_uri_to_id_1(Path, Context);
+local_uri_to_id(Uri, Context) ->
+    Site = z_context:site(Context),
+    case z_sites_dispatcher:dispatch_url(Uri) of
         {ok, #{
+            site := Site,
             controller_options := Options,
             bindings := Bindings
         }} ->
@@ -1252,12 +1511,11 @@ local_uri_to_id(<<$/, C, _/binary>> = Path, Context) when C =/= $/ ->
         _ ->
             % Non matching sites and illegal urls are rejected
             undefined
-    end;
-local_uri_to_id(Uri, Context) ->
-    Site = z_context:site(Context),
-    case z_sites_dispatcher:dispatch_url(Uri) of
+    end.
+
+local_uri_to_id_1(Path, Context) ->
+    case z_sites_dispatcher:dispatch_path(Path, Context) of
         {ok, #{
-            site := Site,
             controller_options := Options,
             bindings := Bindings
         }} ->
@@ -1381,7 +1639,7 @@ opt_url_abs(Url, false, Context) ->
 %% @doc Return the predicates that are valid combined with the predicates that
 %% are actually used by the subject.
 %% This list is to show which predicates are editable for the subject rsc.
-%% @spec predicates_edit(Id, Context) -> [Predicate]
+-spec predicates_edit(term(), z:context()) -> [ term() ].
 predicates_edit(Id, Context) ->
     ByCategory = m_predicate:for_subject(Id, Context),
     Present = m_edge:object_predicate_ids(Id, Context),
@@ -1423,81 +1681,6 @@ postfix(N) -> integer_to_list(N).
 
 
 %% @doc Common properties, these are used by exporter and backup routines.
+-spec common_properties(z:context()) -> [binary()].
 common_properties(_Context) ->
-    [
-        <<"title">>,
-
-        <<"category_id">>,
-        <<"creator_id">>,
-        <<"modifier_id">>,
-
-        <<"created">>,
-        <<"modified">>,
-
-        <<"publication_start">>,
-        <<"publication_end">>,
-
-        <<"is_published">>,
-        <<"is_featured">>,
-        <<"is_protected">>,
-
-        <<"chapeau">>,
-        <<"subtitle">>,
-        <<"short_title">>,
-        <<"summary">>,
-
-        <<"name_prefix">>,
-        <<"name_first">>,
-        <<"name_surname_prefix">>,
-        <<"name_surname">>,
-
-        <<"phone">>,
-        <<"phone_mobile">>,
-        <<"phone_alt">>,
-        <<"phone_emergency">>,
-
-        <<"email">>,
-        <<"website">>,
-
-        <<"date_start">>,
-        <<"date_end">>,
-        <<"date_remarks">>,
-
-        <<"address_street_1">>,
-        <<"address_street_2">>,
-        <<"address_city">>,
-        <<"address_state">>,
-        <<"address_postcode">>,
-        <<"address_country">>,
-
-        <<"mail_email">>,
-        <<"mail_street_1">>,
-        <<"mail_street_2">>,
-        <<"mail_city">>,
-        <<"mail_state">>,
-        <<"mail_postcode">>,
-        <<"mail_country">>,
-
-        <<"billing_email">>,
-        <<"billing_street_1">>,
-        <<"billing_street_2">>,
-        <<"billing_city">>,
-        <<"billing_state">>,
-        <<"billing_postcode">>,
-        <<"billing_country">>,
-
-        <<"location_lng">>,
-        <<"location_lat">>,
-
-        <<"body">>,
-        <<"body_extra">>,
-        <<"blocks">>,
-
-        <<"page_path">>,
-        <<"name">>,
-
-        <<"seo_noindex">>,
-        <<"title_slug">>,
-        <<"custom_slug">>,
-        <<"seo_desc">>
-    ].
+    z_props:common_properties().

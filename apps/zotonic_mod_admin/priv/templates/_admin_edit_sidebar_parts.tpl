@@ -3,6 +3,8 @@
 {% include "_admin_edit_content_publish.tpl" noheader %}
 
 <div> {# also sidebar #}
+    {% all catinclude "_admin_edit_content_sidebar_extra.tpl" id %}
+
     {% include "_admin_edit_content_note.tpl" %}
 
     {% if id.is_a.meta %}

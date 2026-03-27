@@ -1,11 +1,11 @@
 %% -*- coding: utf-8 -*-
 
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2010-2023 Arthur Clemens, Marc Worrell
+%% @copyright 2010-2026 Arthur Clemens, Marc Worrell
 %% @doc Translation support. Handle the language list and manage translations.
 %% @end
 
-%% Copyright 2010-2023 Arthur Clemens, Marc Worrell
+%% Copyright 2010-2026 Arthur Clemens, Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -28,12 +28,150 @@
 
 
 -module(mod_translation).
+-moduledoc("
+This module provides support for dealing with multiple languages.
+
+How content and static strings are translated is explained in full in [Translation](/id/doc_developerguide_translation#guide-translation).
+
+
+
+Language as part of the URL
+---------------------------
+
+By default, [mod_translation](#mod-translation) prefixes each URL (using [URL
+rewriting](/id/doc_developerguide_dispatch_rules#guide-dispatch-rewriting)) in your website with the code of the current
+language. The idea behind this is that each language version of a [resource](/id/doc_glossary#term-resource) gets its
+own URL, and is as such indexable for Google.
+
+This behaviour is enabled by default, but can be switched off in the admin, by going to Structure, Translation. There is
+a checkbox labelled “Show the language in the URL”.
+
+Alternatively you can set the config key `mod_translation.rewrite_url` to `false`.
+
+
+
+Programmatically switching languages
+------------------------------------
+
+In a template, you can use [mod_translation](#mod-translation)’s postback hook to switch between languages:
+
+
+```erlang
+{% button text=\"Dutch\" postback={set_language code=\"nl\"} delegate=`mod_translation` %}
+```
+
+Creates a button which switches to Dutch. And another one for english:
+
+
+```erlang
+{% button text=\"English\" postback={set_language code=\"en\"} delegate=`mod_translation` %}
+```
+
+
+
+Supporting right-to-left languages
+----------------------------------
+
+For basic use you don’t need to do anything. Zotonic base site adds a `lang` attribute to the html tag, and when a
+right-to-left language is selected (for instance Arabic), the browser will interpret `lang=\"ar\"` and automatically
+adapt the content to right-to-left.
+
+
+
+### Custom right-to-left content
+
+If you write your own templates, you can add the `lang` tag in the html or body tag, for instance:
+
+
+```erlang
+<body {% include \"_language_attrs.tpl\" id=id %} >
+```
+
+This will generate the following, when Zotonic selected Arabic for the page with id id:
+
+
+```erlang
+<body xml:lang=\"ar\" lang=\"ar\" dir=\"rtl\" class=\"rtl\">
+```
+
+When you want to add an extra class added to the rtl or ltr class you can use:
+
+
+```erlang
+<body {% include \"_language_attrs.tpl\" id=id class=\"my-body-class\" %} >
+```
+
+To create individual right-to-left elements, you can use the same principle:
+
+
+```erlang
+<div {% include \"_language_attrs.tpl\" %}></div>
+```
+
+And when you want to force a specific language:
+
+
+```erlang
+<div {% include \"_language_attrs.tpl\" language=`en` %} >This is English content</div>
+```
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_admin_menu`: Add translation and language administration entries to the admin menu.
+- `observe_dispatch_rewrite`: Removes the language from the path parts and sets it as the page language.
+- `observe_language_detect`: Detect the preferred request language from URL, user context, and request headers.
+- `observe_request_context`: Check if the user has a preferred language (in the user's config) using `z_context:get_cookie`.
+- `observe_scomp_script_render`: Add translation runtime variables to rendered client-side script blocks.
+- `observe_set_user_language`: Persist a user language change to the authenticated user profile when allowed.
+- `observe_url_rewrite`: Rewrite URLs to include/remove language prefixes according to translation settings.
+- `observe_user_context`: Set user context language/timezone defaults based on the user profile resource.
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `language_default`, `language_delete`, `language_status`, `set_language`, `toggle_url_rewrite`, `translation_generate`, `translation_reload`.
+- `event/2` with `submit` messages: `language_add`, `language_list`.
+
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Translation").
 -mod_description("Handle user’s language and generate .pot files with translatable texts.").
--mod_prio(500).
+-mod_prio(501).
 -mod_provides([translation]).
+-mod_config([
+        #{
+            module => i18n,
+            key => language,
+            type => string,
+            default => "en",
+            description => "The default language to use for this site. Defaults to 'en'. Note that "
+                           "this is set by reordering the languages in /admin/translation"
+        },
+        #{
+            module => i18n,
+            key => language_stemmer,
+            type => string,
+            default => "en",
+            description => "The default language stemmer to use for this site. Defaults to 'en'. "
+                           "This is used for search indexing and stemming."
+        },
+        #{
+            key => rewrite_url,
+            type => boolean,
+            default => true,
+            description => "Rewrite URLs to include the language code, e.g. /en/ instead of /"
+        },
+        #{
+            key => force_default,
+            type => boolean,
+            default => false,
+            description => "Force the default language if no language is set in the request. "
+                           "If not set then language negotation using the request's Accept-Language header is used."
+        }
+    ]).
 
 -export([
     observe_request_context/3,
@@ -61,6 +199,7 @@
     init/1,
     event/2,
     generate/1,
+    generate_country_pot/0,
     generate_core/0
 ]).
 
@@ -108,7 +247,10 @@ set_language([Code|_] = Langs, Context) when is_atom(Code) ->
         Langs =:= ContextLangs ->
             Context;
         true ->
-            Enabled = z_language:enabled_languages(Context),
+            Enabled = case z_auth:is_auth(Context) andalso z_acl:is_allowed(use, mod_admin, Context) of
+                true -> z_language:editable_languages(Context);
+                false -> z_language:enabled_languages(Context)
+            end,
             Langs1 = lists:filter(
                 fun(Lang) ->
                     lists:member(Lang, Enabled)
@@ -251,7 +393,13 @@ get_q_language(Context) ->
                 {ok, Code} ->
                     case z_language:is_language_enabled(Code, Context) of
                         true -> Code;
-                        false -> get_q_language_1(Lang, Context)
+                        false ->
+                            case z_language:is_language_editable(Code, Context)
+                                andalso z_acl:is_allowed(use, mod_admin, Context)
+                            of
+                                true -> Code;
+                                false -> get_q_language_1(Lang, Context)
+                            end
                     end;
                 {error, _} ->
                     get_q_language_1(Lang, Context)
@@ -259,18 +407,9 @@ get_q_language(Context) ->
     end.
 
 get_q_language_1(<<A, B, $-, _/binary>> = Lang, Context) ->
-    Acceptable = z_language:acceptable_languages_map(Context),
-    case maps:get(Lang, Acceptable, undefined) of
-        undefined ->
-            case maps:get(<<A,B>>, Acceptable, undefined) of
-                undefined ->
-                    undefined;
-                Code ->
-                    binary_to_atom(Code, utf8)
-            end;
-        Code ->
-            binary_to_atom(Code, utf8)
-    end;
+    get_q_language_1_sub(<<A, B>>, Lang, Context);
+get_q_language_1(<<A, B, C, $-, _/binary>> = Lang, Context) ->
+    get_q_language_1_sub(<<A, B, C>>, Lang, Context);
 get_q_language_1(Lang, Context) ->
     Acceptable = z_language:acceptable_languages_map(Context),
     case maps:get(Lang, Acceptable, undefined) of
@@ -280,8 +419,22 @@ get_q_language_1(Lang, Context) ->
             binary_to_atom(Code, utf8)
     end.
 
+get_q_language_1_sub(BaseLang, Lang, Context) ->
+    Acceptable = z_language:acceptable_languages_map(Context),
+    case maps:get(Lang, Acceptable, undefined) of
+        undefined ->
+            case maps:get(BaseLang, Acceptable, undefined) of
+                undefined ->
+                    undefined;
+                Code ->
+                    binary_to_atom(Code, utf8)
+            end;
+        Code ->
+            binary_to_atom(Code, utf8)
+    end.
+
 observe_user_context(#user_context{ id = UserId }, Context, _Context) ->
-    case m_rsc:p_no_acl(UserId, pref_language, Context) of
+    case m_rsc:p_no_acl(UserId, <<"pref_language">>, Context) of
         Code when Code /= undefined ->
             set_language(Code, Context);
         _ ->
@@ -289,7 +442,7 @@ observe_user_context(#user_context{ id = UserId }, Context, _Context) ->
     end.
 
 observe_set_user_language(#set_user_language{ id = UserId }, Context, _Context) when is_integer(UserId) ->
-    case m_rsc:p_no_acl(UserId, pref_language, Context) of
+    case m_rsc:p_no_acl(UserId, <<"pref_language">>, Context) of
         Code when Code /= undefined -> set_language(Code, Context);
         _ -> Context
     end;
@@ -302,6 +455,10 @@ observe_url_rewrite(#url_rewrite{}, Url, #context{language=[_,'x-default']}) ->
 observe_url_rewrite(#url_rewrite{}, <<"?", _/binary>> = Url, _Context) ->
     Url;
 observe_url_rewrite(#url_rewrite{}, <<"#", _/binary>> = Url, _Context) ->
+    Url;
+observe_url_rewrite(#url_rewrite{}, <<"/.well-known/", _/binary>> = Url, _Context) ->
+    Url;
+observe_url_rewrite(#url_rewrite{}, <<"/.zotonic/", _/binary>> = Url, _Context) ->
     Url;
 observe_url_rewrite(#url_rewrite{args=Args}, Url, Context) ->
     case z_context:language(Context) of
@@ -326,7 +483,7 @@ observe_url_rewrite(#url_rewrite{args=Args}, Url, Context) ->
     end.
 
 
-%% @doc Grabs the language from the path parts and sets it as the page language (if that
+%% @doc Remove the language from the path parts and sets it as the page language (if that
 %%      language is enabled).
 %%      Note that this works irrespectively of the rewrite_url setting: when rewrite_url
 %%      is false and the URL includes the language, we will still read the language
@@ -340,13 +497,13 @@ observe_dispatch_rewrite(#dispatch_rewrite{is_dir=IsDir}, {Parts, Args} = Dispat
                 true ->
                     Dispatch;
                 false ->
-                    case is_enabled_language(<<"id">>, Context) of
+                    case is_editable_language(id, Context) of
                         true -> {[Other], [{z_language, <<"id">>}|Args]};
                         false -> Dispatch
                     end
             end;
         [First|Rest] when IsDir orelse Rest /= [] ->
-            case is_enabled_language(First, Context) of
+            case is_editable_language(First, Context) of
                 true -> {Rest, [{z_language, First}|Args]};
                 false -> Dispatch
             end;
@@ -487,7 +644,12 @@ event(#postback{message={translation_generate, _Args}}, Context) ->
         true ->
             case gettext_installed() of
                 true ->
-                    spawn(fun() -> generate(Context) end),
+                    Site = z_context:site(Context),
+                    z_proc:spawn_md(
+                        fun() ->
+                            generate_core(),
+                            generate(Site)
+                        end),
                     z_render:growl(?__(<<"Started building the .pot files. This may take a while...">>, Context), Context);
                 false ->
                     ?LOG_ERROR(#{
@@ -612,16 +774,30 @@ valid_config_language(Code, Context, Tries) ->
     EnabledLanguages = z_language:enabled_languages(Context),
     case proplists:get_value(Code, EnabledLanguages, false) of
         false ->
-            % Language code is not listed in config, let's try a fallback
-            Fallback = z_language:fallback_language(Code, Context),
-            % Bail out if we got into a loop
-            case lists:member(Fallback, Tries) of
-                true -> undefined;
-                false -> valid_config_language(Fallback, Context, [ Fallback | Tries ])
+            case z_acl:is_allowed(use, mod_admin, Context) of
+                true ->
+                    EditableLanguages = z_language:editable_languages(Context),
+                    case proplists:get_value(Code, EditableLanguages, false) of
+                        false ->
+                            valid_config_language_fallback(Code, Context, Tries);
+                        true ->
+                            Code
+                    end;
+                false ->
+                    valid_config_language_fallback(Code, Context, Tries)
             end;
         true ->
             % Language is listed and enabled
             Code
+    end.
+
+valid_config_language_fallback(Code, Context, Tries) ->
+    % Language code is not listed in config, let's try a fallback
+    Fallback = z_language:fallback_language(Code, Context),
+    % Bail out if we got into a loop
+    case lists:member(Fallback, Tries) of
+        true -> undefined;
+        false -> valid_config_language(Fallback, Context, [ Fallback | Tries ])
     end.
 
 %% @doc Set the enabled/editable status of a language. Returns an error if the
@@ -736,19 +912,21 @@ is_multiple_languages_config(Context) ->
 
 
 %% @private
--spec is_enabled_language(binary() | atom(), z:context()) -> boolean().
-is_enabled_language(LanguageCode, Context) ->
+-spec is_editable_language(binary() | atom(), z:context()) -> boolean().
+is_editable_language(LanguageCode, Context) when is_binary(LanguageCode) ->
     case maybe_language_code(LanguageCode) of
         true ->
-            Enabled = z_language:enabled_languages(Context),
             try
-                lists:member(z_convert:to_atom(LanguageCode), Enabled)
+                is_editable_language(binary_to_existing_atom(LanguageCode), Context)
             catch
                 error:badarg -> false
             end;
         false ->
             false
-    end.
+    end;
+is_editable_language(LangAtom, Context) when is_atom(LangAtom) ->
+    Enabled = z_language:editable_languages(Context),
+    lists:member(LangAtom, Enabled).
 
 maybe_language_code(<<A,B>> = Code) when A >= $a, A =< $z, B >= $a, B =< $z ->
     z_language:is_valid(Code);
@@ -756,45 +934,81 @@ maybe_language_code(<<A,B,$-,_/binary>> = Code) when A >= $a, A =< $z, B >= $a, 
     z_language:is_valid(Code);
 maybe_language_code(<<A,B,C>> = Code) when A >= $a, A =< $z, B >= $a, B =< $z, C >= $a, C =< $z ->
     z_language:is_valid(Code);
+maybe_language_code(<<A,B,C,$-,_/binary>> = Code) when A >= $a, A =< $z, B >= $a, B =< $z, C >= $a, C =< $z ->
+    z_language:is_valid(Code);
 maybe_language_code(<<$x,$-,_/binary>> = Code) ->
     % x-default, x-klingon, etc.
     z_language:is_valid(Code);
-maybe_language_code(Code) when is_atom(Code) ->
-    maybe_language_code( atom_to_binary(Code, utf8) );
 maybe_language_code(_) ->
     false.
 
 
 % @doc Generate all .po templates for the given site
+-spec generate(Site) -> ok | {error, Reason} when
+    Site :: atom() | z:context(),
+    Reason :: needs_core_zotonic | gettext_notfound | bad_name
+            | z_sites_manager:site_status().
 generate(Host) when is_atom(Host) ->
-    generate(z_context:new(Host));
+    case maps:get(Host, z_sites_manager:get_sites(), undefined) of
+        running ->
+            generate(z_context:new(Host));
+        undefined ->
+            {error, bad_name};
+        Status ->
+            {error, Status}
+    end;
 generate(Context) ->
-    ActiveModules = lists:foldl(
-        fun({App, _}, Acc) ->
-            lists:keydelete(core_app_to_module_name(App), 1, Acc)
-        end,
-        z_module_manager:active_dir(Context),
-        core_apps()),
-    Result = translation_po:generate(translation_scan:scan(ActiveModules)),
-    _ = generate_core(),
-    Result.
+    case gettext_installed() of
+        true ->
+            ActiveModules = lists:foldl(
+                fun({App, _}, Acc) ->
+                    lists:keydelete(core_app_to_module_name(App), 1, Acc)
+                end,
+                z_module_manager:active_dir(Context),
+                core_apps()),
+            ?LOG_NOTICE(#{
+                in => zotonic_mod_translation,
+                text => <<"Generating site .pot files...">>,
+                apps => ActiveModules
+            }),
+            translation_po:generate(translation_scan:scan(ActiveModules));
+        false ->
+            {error, gettext_notfound}
+    end.
 
 %% @doc Generate consolidated translation file zotonic.pot for all core modules.
 %%      Both active and inactive modules are indexed, so the generated
 %%      translation files are always complete.
--spec generate_core() -> ok | {error, needs_core_zotonic}.
+-spec generate_core() -> ok | {error, needs_core_zotonic | gettext_notfound}.
 generate_core() ->
     case zotonic_core:is_zotonic_project() of
         true ->
-            ?LOG_NOTICE(#{
-                in => zotonic_mod_translation,
-                text => <<"Generating .pot files...">>
-            }),
-            translation_po:generate(translation_scan:scan(core_apps())),
-            consolidate_core();
+            case gettext_installed() of
+                true ->
+                    ?LOG_NOTICE(#{
+                        in => zotonic_mod_translation,
+                        text => <<"Generating Zotonic core .pot files...">>
+                    }),
+                    translation_po:generate(translation_scan:scan(core_apps())),
+                    generate_country_pot(),
+                    generate_languages_pot(),
+                    consolidate_core();
+                false ->
+                    {error, gettext_notfound}
+            end;
         false ->
             {error, needs_core_zotonic}
     end.
+
+generate_country_pot() ->
+    ZotonicPot = filename:join([ code:priv_dir(zotonic_core), "translations", "zotonic-country.pot" ]),
+    Countries = [ {Country, <<>>, undefined} || {_Code, Country} <- l10n_iso2country:iso2country() ],
+    z_gettext_compile:generate(ZotonicPot, lists:sort(Countries)).
+
+generate_languages_pot() ->
+    ZotonicPot = filename:join([ code:priv_dir(zotonic_core), "translations", "zotonic-language.pot" ]),
+    Languages = [ {Language, <<>>, undefined} || Language <- z_language_data:language_names_en() ],
+    z_gettext_compile:generate(ZotonicPot, Languages).
 
 %% @doc Return a list of all core modules and sites - only for the zotonic git project.
 core_apps() ->
@@ -816,7 +1030,7 @@ consolidate_core() ->
     ]),
     ?LOG_NOTICE(#{
         in => zotonic_mod_translation,
-        text => <<"Merging .pot files">>,
+        text => <<"Merging Zotonic core .pot files">>,
         path => ZotonicPot
     }),
     Command = lists:flatten([

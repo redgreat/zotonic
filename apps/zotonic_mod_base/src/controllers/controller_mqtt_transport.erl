@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2018-2021 Marc Worrell
 %% @doc MQTT WebSocket connections
+%% @end
 
 %% Copyright 2018-2021 Marc Worrell
 %%
@@ -17,6 +18,21 @@
 %% limitations under the License.
 
 -module(controller_mqtt_transport).
+-moduledoc("
+Controller for transport of MQTT data between the browser (client) and server.
+
+This controller accepts Websocket connections and out-of-band HTTP POSTs.
+
+The HTTP POSTs must have a valid ticket. See [m_mqtt_ticket](/id/doc_model_model_mqtt_ticket) on how to obtain such
+a ticket and more information about tickets.
+
+The Websocket connection is a normal MQTT transport over Websocket.
+
+For the authentication the Websocket accepts two methods:
+
+*   Cookie authentication with `z.auth` cookie, see [controller_authentication](/id/doc_controller_controller_authentication).
+*   Username and password in the MQTT connect
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -export([

@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2017 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Validator for checking if an input value is within a certain length range
+%% @end
 
-%% Copyright 2009-2017 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,38 @@
 %% limitations under the License.
 
 -module(validator_base_length).
+-moduledoc("
+Check the length of a text input.
+
+Test if the length of the input’s value is more than a minimum and/or less than a maximum length.
+
+Arguments are minimum and maximum. You can give either or both arguments.
+
+For example, a summary that is neither too long nor too short:
+
+
+```django
+<textarea id=\"summary\" name=\"summary\"></textarea>
+{% validate id=\"summary\" type={length minimum=20 maximum=200} %}
+```
+
+
+
+Arguments
+---------
+
+| Argument                 | Description                                                                      | Example      |
+| ------------------------ | -------------------------------------------------------------------------------- | ------------ |
+| is                       | Use when the value must be a specific length.                                    | `is=4`       |
+| minimum                  | The minimum length of the value.                                                 | `minimum=4`  |
+| maximum                  | The maximum length of the value.                                                 | `maximum=10` |
+| wrong\\\\_length\\\\_message | Message for when the length is unequal to the value of the “is” argument. Defaults to “Must be . characters long.” |              |
+| too\\\\_short\\\\_message    | Message for when there are not enough characters entered. Defaults to “Must not be less than . characters long.” |              |
+| too\\\\_long\\\\_message     | Message for when there are too many characters entered. Defaults to “Must not be more than . characters long.” |              |
+
+See also
+
+[Forms and validation](/id/doc_developerguide_forms_and_validation#guide-validators)").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_validator/5, validate/5]).
 
@@ -28,7 +61,8 @@ render_validator(length, TriggerId, _TargetId, Args, _Context)  ->
 	{[to_number(Min),to_number(Max)], Script}.
 
 
-%% @spec validate(Type, TriggerId, Values, Args, Context) -> {ok,AcceptedValue} | {error,Id,Error}
+-spec validate(term(), term(), term(), list(), z:context()) ->
+    {{ok, term()}, z:context()} | {{error, term(), term()}, z:context()}.
 %%          Error = invalid | novalue | {script, Script}
 validate(length, Id, Value, [Min,Max], Context) when is_list(Value); is_binary(Value) ->
     case z_string:len(Value) of

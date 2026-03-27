@@ -19,6 +19,11 @@
 %% limitations under the License.
 
 -module(controller_export_resource).
+-moduledoc("
+Todo
+
+Not yet documented.
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -export([
@@ -43,15 +48,10 @@ previously_existed(Context) ->
 forbidden(Context) ->
     {Id, Context2} = get_id(Context),
     Dispatch = z_context:get(zotonic_dispatch, Context2),
-    case z_acl:is_allowed(use, mod_export, Context2) of
-        true ->
-            case export_helper:call(#export_resource_visible{id=Id, dispatch=Dispatch}, Context2) of
-                undefined -> {not z_acl:rsc_visible(Id, Context2), Context2};
-                true -> {false, Context2};
-                false -> {true, Context2}
-            end;
-        false ->
-            {true, Context2}
+    case export_helper:call(#export_resource_visible{id=Id, dispatch=Dispatch}, Context2) of
+        undefined -> {not z_acl:rsc_visible(Id, Context2), Context2};
+        true -> {false, Context2};
+        false -> {true, Context2}
     end.
 
 content_types_provided(Context) ->
@@ -89,6 +89,8 @@ process(_Method, _AcceptedCT, ProvidedCT, Context) ->
 
 get_id(Context) ->
     case z_context:get(id, Context) of
+        {ok, MaybeId} ->
+            {MaybeId, Context};
         undefined ->
             case z_context:get_q(<<"id">>, Context) of
                 undefined ->
@@ -99,7 +101,8 @@ get_id(Context) ->
                     RscId = m_rsc:rid(Id, Context),
                     {RscId, z_context:set(id, {ok, RscId}, Context)}
             end;
-        {ok, Id} ->
-            {Id, Context}
+        Id ->
+            RscId = m_rsc:rid(Id, Context),
+            {RscId, z_context:set(id, {ok, RscId}, Context)}
     end.
 

@@ -1,9 +1,9 @@
 %% @author Arjan Scherpenisse <arjan@scherpenisse.net>
-%% @copyright 2011-2023 Arjan Scherpenisse <arjan@scherpenisse.net>
+%% @copyright 2011-2026 Arjan Scherpenisse <arjan@scherpenisse.net>
 %% @doc Enables embedding media from their URL.
 %% @end
 
-%% Copyright 2011-2023 Arjan Scherpenisse <arjan@scherpenisse.net>
+%% Copyright 2011-2026 Arjan Scherpenisse <arjan@scherpenisse.net>
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,11 +18,120 @@
 %% limitations under the License.
 
 -module(mod_oembed).
+-moduledoc("
+Makes media [resources](/id/doc_glossary#term-resource) from embeddable URLs through the
+[OEmbed](http://www.oembed.com/) protocol.
+
+This module, if activated, checks the pasted URLs in the *create media / page* dialog of the admin. It will show an
+embed option for services like YouTube, Vimeo or any other service which supports OEmbed.
+
+A saved media resource has a thumbnail image which is downloaded from the OEmbed service and embedded in the resource.
+Furthermore, the resource’s medium record has an `oembed` field which contains the full JSON response of the request.
+The `oembed` field looks like this:
+
+
+```erlang
+\"oembed\": {
+  \"type\": \"video\",
+  \"version\": \"1.0\",
+  \"provider_name\": \"Vimeo\",
+  \"provider_url\": \"http://vimeo.com/\",
+  \"title\": \"Heli Filming Showreel\",
+  \"author_name\": \"Hot Knees Media\",
+  \"author_url\": \"http://vimeo.com/hotknees\",
+  \"is_plus\": \"1\",
+  \"html\": \"<iframe src=\\\"http://player.vimeo.com/video/20898411\\\" width=\\\"640\\\" height=\\\"362\\\" ...\",
+  \"width\": 640,
+  \"height\": 362,
+  \"duration\": 106,
+  \"description\": \"description..\",
+  \"thumbnail_url\": \"http://b.vimeocdn.com/ts/138/106/138106290_640.jpg\",
+  \"thumbnail_width\": 640,
+  \"thumbnail_height\": 362,
+  \"video_id\": 20898411
+}
+```
+
+So, to display the HTML of an OEmbedded medium, you would do the following in a template:
+
+
+```erlang
+{{ id.medium.html }}
+```
+
+The module also supports the use of the [media](/id/doc_template_tag_tag_media) tag:
+
+
+```erlang
+{% media m.rsc[id].o.depiction.medium %}
+```
+
+Note however, that setting dimensions on this media tag is not supported for OEmbed, as the embed width/height is always
+taken from the provider.
+
+
+
+Configuration options
+---------------------
+
+The following [m_config](/id/doc_model_model_config) options are supported:
+
+`mod_oembed.embedly_key`
+
+The API key for Embedly. This configuration kan be added set in the admin via the menu **Auth -> External Services**.
+
+`mod_oembed.maxwidth`
+
+Requests the OEmbed service to return an HTML embed code with the requested maximum width. Defaults to 640.
+
+`mod_oembed.maxheight`
+
+Requests the OEmbed service to return an HTML embed code with the requested maximum height. Not set by default.
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_media_import`: Expand supported oEmbed URLs into embeddable media metadata and resources.
+- `observe_media_import_medium`: Import a embedded medium for a rsc_import using `m_media:get`.
+- `observe_media_stillimage`: Return the filename of a still image to be used for image tags using `oembed_admin:count_missing`.
+- `observe_media_viewer`: Return the media viewer for the embedded video.
+- `observe_rsc_update`: Check if the update contains video embed information using `z_acl:is_allowed`.
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `fix_missing`.
+- `event/2` with `submit` messages: `admin_oembed`.
+
+See also
+
+[mod_video_embed](/id/doc_module_mod_video_embed), [mod_video](/id/doc_module_mod_video), [mod_audio](/id/doc_module_mod_audio), [media](/id/doc_template_tag_tag_media)").
 -author("Arjan Scherpenisse <arjan@scherpenisse.net>").
 
 -mod_title("OEmbed support").
 -mod_description("Add external media in your site by their URL.").
 -mod_prio(600).
+-mod_config([
+        #{
+            key => embedly_key,
+            type => string,
+            default => "",
+            description => "The optional Embedly API key to use for oembed requests."
+        },
+        #{
+            key => maxwidth,
+            type => integer,
+            default => 1200,
+            description => "The maximum width of the oembed preview images. Defaults to 1200 pixels."
+        },
+        #{
+            key => maxheight,
+            type => integer,
+            default => "",
+            description => "The maximum height of the oembed preview images. Defaults to no max height."
+        }
+    ]).
 
 %% interface functions
 -export([
@@ -105,9 +214,9 @@ observe_rsc_update(#rsc_update{action=update, id=Id, props=CurrProps}, {ok, Upda
                     case OldMediaProps of
                         undefined ->
                             {true, preview_create_from_medium(Id, MediaProps, Context)};
-                        #{ <<"mime">> := ?OEMBED_MIME } ->
-                            case        z_utils:are_equal(maps:get(oembed_url, OldMediaProps, undefined), EmbedUrl)
-                                andalso maps:get(<<"oembed">>, OldMediaProps, undefined) =/= undefined
+                        #{ <<"mime">> := ?OEMBED_MIME } = OldMProps ->
+                            case        z_utils:are_equal(maps:get(oembed_url, OldMProps, undefined), EmbedUrl)
+                                andalso maps:get(<<"oembed">>, OldMProps, undefined) =/= undefined
                             of
                                 true ->
                                     %% Not changed
@@ -151,7 +260,7 @@ observe_rsc_update(#rsc_update{}, {error, _} = Error, _Context) ->
 %% <tt>_oembed_embeddable_(providername).tpl</tt>; if not found, falls back to
 %% the HTML code that the oembed provider gave us; if none found,
 %% falls back to the generic template <tt>_oembed_embeddable.tpl</tt>.
-%% @spec observe_media_viewer(Notification, Context) -> undefined | {ok, Html}
+-spec observe_media_viewer(term(), z:context()) -> undefined | {ok, iodata()}.
 observe_media_viewer(#media_viewer{
             id = Id,
             props= #{ <<"mime">> := ?OEMBED_MIME } = Props,
@@ -333,7 +442,7 @@ as_int(N) -> z_convert:to_integer(N).
 
 
 %% @doc Return the filename of a still image to be used for image tags.
-%% @spec observe_media_stillimage(Notification, _Context) -> undefined | {ok, Filename}
+-spec observe_media_stillimage(term(), z:context()) -> undefined | {ok, file:filename_all()}.
 observe_media_stillimage(#media_stillimage{ props = #{ <<"mime">> := ?OEMBED_MIME } = Props}, _Context) ->
     case maps:get(<<"preview_filename">>, Props, <<>>) of
         undefined -> {ok, <<"lib/images/embed.jpg">>};
@@ -356,7 +465,7 @@ event(#postback{ message = fix_missing }, Context) ->
 event(#submit{ message = admin_oembed }, Context) ->
     case z_acl:is_allowed(use, mod_admin_config, Context) of
         true ->
-            EmbedlyKey = z_string:trim(z_context:get_q(<<"embedly_key">>, Context)),
+            EmbedlyKey = z_string:trim(z_convert:to_binary(z_context:get_q(<<"embedly_key">>, Context))),
             m_config:set_value(mod_oembed, embedly_key, EmbedlyKey, Context),
             z_render:growl(?__("Saved the Embedly settings.", Context), Context);
         false ->
@@ -502,7 +611,7 @@ sanitize_json1(_K, _V, _Context) ->
 
 %% @doc Given a thumbnail URL, download it and return the content type plus image data pair.
 thumbnail_request(ThumbUrl, _Context) ->
-    case httpc:request(get, {z_convert:to_list(ThumbUrl), []}, [], []) of
+    case httpc:request(get, {unicode:characters_to_list(ThumbUrl), []}, [], []) of
         {ok, {{_, 200, _}, Headers, ImageData}} ->
             CT = case proplists:lookup("content-type", Headers) of
                      {"content-type", C} -> z_convert:to_binary(C);

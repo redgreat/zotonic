@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2023 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Model for accessing and manipulating edges between resources.
 %% @end
 
-%% Copyright 2009-2023 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,189 @@
 %% limitations under the License.
 
 -module(m_edge).
+-moduledoc("
+Access information about page connections.
+
+Edges represent the connections between resources. They are implemented as tuples `{EdgeId, SubjectId, PredicateId, ObjectId,
+OrderNr}`. The edge id is a unique id representing the edge, it can be used with edit actions. The OrderNr defines the
+order of the edges with respect to the subject.
+
+Most edge information is accessed using the [m_rsc](/id/doc_model_model_rsc) model, but some information can only
+accessed with the m_edge model.
+
+This model implements two template accessible options. They are mainly used to obtain the edge's id for edit pages.
+
+The following m_edge model properties are available in templates:
+
+| Property  | Description                                                                      | Example value                                                                    |
+| --------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| o         | Returns a function that accepts a page  id and a predicate. The end result is a list of tuples {PageId, EdgeId} which are objects of the page. Example usage: `m.edge.o[id].author` | `[{204,13},{510,14}, {508,15}]`                                                  |
+| s         | Identical to the \"o\" property, except that this function returns the subject edges. |                                                                                  |
+| o_props | Similar to `m.edge.o[id].author` above, but returns a property list for the edges instead of the 2-tuple. | `> [ > {id, 86062}, > {subject_id, 10635}, > {predicate_id, 304}, > {object_id, 57577}, > {seq, 1}, > {creator_id, 1}, > {created, { > {2015,11,17}, > {11,23,32} > }} > ] > ]` |
+| s_props | Similar to `m.edge.s[id].author` above, but returns a property list for the edges instead of the 2-tuple. |                                                                                  |
+| edges | Returns a function that accepts a page id. The end result is a list of edges per predicate where the predicate is an atom and the edges are property lists. Example usage: `m.edge[10635]` | `See example below.` |
+| id | Look up an edge id by a subject/predicate/object triple. Example usage:   ```erlang m.edge.id[subject_id].relation[object_id] ```  or:   ```erlang m.edge.id[subject_id][predicate_name][object_id] ```  Returns `undefined` if the edge does not exist; otherwise returns an integer. | `213` |
+
+Example return value for `{% print m.edge[10635] %}`:
+
+
+```erlang
+[{about,[[{id,86060},
+          {subject_id,10635},
+          {predicate_id,300},
+          {name,<<\"about\">>},
+          {object_id,17433},
+          {seq,1},
+          {created,{{2015,11,17},{11,22,11}}},
+          {creator_id,1}]]},
+ {author,[[{id,6},
+           {subject_id,10635},
+           {predicate_id,301},
+           {name,<<\"author\">>},
+           {object_id,10634},
+           {seq,1000000},
+           {created,{{2015,2,3},{16,23,20}}},
+           {creator_id,1}]]}]
+```
+
+
+
+Other Topics
+------------
+
+`model/edge/post/o/+subject/+predicate/+object` or `model/edge/post/s/+object/+predicate/+subject` inserts a new edge between resources.
+
+The posted message can optionally include the name or id of the object, predicate and subject.
+
+
+```javascript
+cotonic.broker.publish(\"bridge/origin/edge/post/o/4312\",
+                       {
+                         predicate: \"author\",
+                         subject: 7575
+                       });
+```
+
+It is also possible to insert edges via cotonics onclick topics.
+
+
+```django
+<div data-onclick-topic=\"bridge/origin/model/edge/post/o/{{ id }}/?/{{ m.acl.user }}\">
+   <button data-edge-predicate=\"is_going\">Is Going</button>
+   <button data-edge-predicate=\"is_interested\">Might Go</button>
+</div>
+```
+
+When a user clicks on a button, the model retrieves the predicate name (or id) from the `data-edge-predicate` attribute.
+This is also possible by for the object and subject attributes of the edge. When there is a `?` in the topic path, the
+value can be retrieved from a data attribute. The attribute value for object is: `data-edge-object`. For subject it is: `data-edge-subject`.
+If all path parts from the first `?` to the end are `?`, then those trailing `?` parts may be omitted from the topic path.
+
+`model/edge/delete/o/+subject/+predicate/+object`, `model/edge/delete/s/+object/+predicate/+subject` or `model/edge/delete/edge/+edge_id` deletes the specified edge.
+
+
+```javascript
+cotonic.broker.publish(\"bridge/origin/edge/delete/edge/6776\");
+```
+
+Or via a onclick topic.
+
+
+```django
+<button data-onclick-topic=\"bridge/origin/edge/delete/{{ edge_id }}\">Delete</button
+```
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/o/+id/+pred/...` | Return outgoing edge tuples `{ObjectId, EdgeId}` from subject `+id` for predicate `+pred` (subject must be visible). |
+| `get` | `/o_props/+id/+pred/...` | Return outgoing edge rows (id/subject/predicate/object/seq/created/creator) from subject `+id` for predicate `+pred`. |
+| `get` | `/s/+id/+pred/...` | Return incoming edge tuples `{SubjectId, EdgeId}` pointing to object `+id` for predicate `+pred` (object must be visible). |
+| `get` | `/s_props/+id/+pred/...` | Return incoming edge rows (id/subject/predicate/object/seq/created/creator) for object `+id` and predicate `+pred`. |
+| `get` | `/edges/+id/...` | Return all outgoing edges of resource `+id` grouped by predicate name. |
+| `get` | `/id/+subjectid/+pred/+objectid/...` | Return edge id for (`+subjectid`, `+pred`, `+objectid`) or `undefined` if absent (subject must be visible). |
+| `get` | `/graph/...` | Return graph map (`nodes`, `edges`, `is_truncated`) for payload `ids`, with optional payload options `limit` and `unescape`. |
+| `get` | `/+id` | Return same grouped outgoing-edge data as `/edges/+id` for resource `+id`. No further lookups. |
+| `post` | `/o/...` | Insert one edge using object-oriented argument order `(subject, predicate, object)`; values come from path segments, payload keys, `message.data-edge-*`, or query args. |
+| `post` | `/s/...` | Insert one edge using subject-oriented path order `(object, predicate, subject)`; stored edge is still `(subject, predicate, object)`. |
+| `delete` | `/o/...` | Delete edge(s) using object-oriented order `(subject, predicate, object)`. |
+| `delete` | `/s/...` | Delete edge(s) using subject-oriented path order `(object, predicate, subject)`; this maps to stored triple `(subject, predicate, object)`. |
+| `delete` | `/edge/+edge` | Delete a single edge by edge id `+edge` (invalid id returns `enoent`). No further lookups. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+
+
+Post Method Examples
+--------------------
+
+Path orientation notes:
+
+- Object-oriented path (`/o/...`) uses order: `subject / predicate / object`.
+- Subject-oriented path (`/s/...`) uses order: `object / predicate / subject`.
+- Both forms create or delete the same edge triple in storage: `(subject, predicate, object)`.
+- Trailing wildcard parts can be omitted: if all path parts from the first `?` to the end are `?`, you may stop the path at that first `?`.
+
+Insert via object-oriented path:
+
+```javascript
+cotonic.broker.call(
+    \"bridge/origin/model/edge/post/o/7575/author/4312\",
+    {}
+);
+```
+
+Insert via wildcard path values (`?`) resolved from payload:
+
+```javascript
+cotonic.broker.call(
+    \"bridge/origin/model/edge/post/o/?/?/?\",
+    {
+        subject: 7575,
+        predicate: \"author\",
+        object: 4312
+    }
+);
+```
+
+Insert with trailing wildcards omitted (only subject in path, predicate/object from payload):
+
+```javascript
+cotonic.broker.call(
+    \"bridge/origin/model/edge/post/o/7575\",
+    {
+        predicate: \"author\",
+        object: 4312
+    }
+);
+```
+
+Insert with all values from payload (shortest path):
+
+```javascript
+cotonic.broker.call(
+    \"bridge/origin/model/edge/post/o\",
+    {
+        subject: 7575,
+        predicate: \"author\",
+        object: 4312
+    }
+);
+```
+
+Insert via subject-oriented path:
+
+```javascript
+cotonic.broker.call(
+    \"bridge/origin/model/edge/post/s/4312/author/7575\",
+    {}
+);
+```
+
+See also
+
+[m_rsc](/id/doc_model_model_rsc), [m_media](/id/doc_model_model_media)").
 -author("Marc Worrell <marc@worrell.nl").
 
 -behaviour(zotonic_model).
@@ -28,6 +211,7 @@
     m_post/3,
     m_delete/3,
 
+    get_graph/3,
     get/2,
     get_triple/2,
     get_id/4,
@@ -48,6 +232,8 @@
     subjects/3,
     objects/2,
     subjects/2,
+    has_objects/2,
+    has_subjects/2,
     object_edge_ids/3,
     subject_edge_ids/3,
     object_edge_props/3,
@@ -75,6 +261,11 @@
     insert_options/0,
     insert_option/0
 ]).
+
+%% Default limit for the number of edges returned in the graph function.
+%% This is needed to prevent performance issues when a resource has a very
+%% large number of incoming and/or outgoing edges.
+-define(DEFAULT_GRAPH_EDGE_LIMIT, 5000).
 
 
 %% @doc Fetch all object/edge ids for a subject/predicate
@@ -118,6 +309,22 @@ m_get([ <<"id">>, SubjectId, Pred, ObjectId | Rest ], _Msg, Context) ->
         false ->
             {error, eacces}
     end;
+m_get([ <<"graph">> | Rest ], #{ payload := #{ <<"ids">> := Ids } = Payload }, Context) ->
+    Options = maps:fold(
+        fun
+            (<<"limit">>, Limit, Acc) ->
+                [ {limit, z_convert:to_integer(Limit)} | Acc ];
+            (<<"unescape">>, Unescape, Acc) ->
+                case z_convert:to_bool(Unescape) of
+                    true -> [ unescape | Acc ];
+                    false -> Acc
+                end;
+            (_K, _V, Acc) -> Acc
+        end,
+        [],
+        Payload),
+    {ok, Graph} = get_graph(Ids, Options, Context),
+    {ok, {Graph, Rest}};
 m_get([Id], _Msg, Context) ->
     case z_acl:rsc_visible(Id, Context) of
         true -> {ok, {get_edges(Id, Context), []}};
@@ -126,7 +333,7 @@ m_get([Id], _Msg, Context) ->
 m_get(_Vs, _Msg, _Context) ->
     {error, unknown_path}.
 
--spec m_post( list(), zotonic_model:opt_msg(), z:context()) -> zotonic_model:return().
+-spec m_post( list(), zotonic_model:opt_msg(), z:context()) -> zotonic_model:post_return().
 m_post([<<"o">> | Path ], #{ payload := Payload }, Context) ->
     {Subject, Predicate, Object} = get_spo_o(Path, Payload, Context),
     do_post_insert(Subject, Predicate, Object, Context);
@@ -134,7 +341,7 @@ m_post([<<"s">> | Path ], #{ payload := Payload }, Context) ->
     {Subject, Predicate, Object} = get_spo_s(Path, Payload, Context),
     do_post_insert(Subject, Predicate, Object, Context).
 
--spec m_delete( list(), zotonic_model:opt_msg(), z:context()) -> zotonic_model:return().
+-spec m_delete( list(), zotonic_model:opt_msg(), z:context()) -> zotonic_model:delete_return().
 m_delete([<<"o">> | Path], #{payload := Payload}, Context) ->
     {Subject, Predicate, Object} = get_spo_o(Path, Payload, Context),
     delete(Subject, Predicate, Object, Context);
@@ -147,6 +354,172 @@ m_delete([<<"edge">>, Edge], _Msg, Context) ->
             {error, enoent};
         EdgeId ->
             delete(EdgeId, Context)
+    end.
+
+
+%% @doc Get the complete graph for the given resource ids. Returns a map
+%% with nodes and edges. The function accepts two options, 'limit' and
+%% 'unescape'. The 'limit' option limits the number of edges returned for
+%% each direction (in and out). The 'unescape' option unescapes the labels of
+%% the nodes and edges.
+-spec get_graph(Ids, Options, Context) -> {ok, Graph} when
+    Ids :: [ m_rsc:resource() ],
+    Context :: z:context(),
+    Graph :: #{
+        nodes => [Node],
+        edges => [Edge],
+        is_truncated => boolean()
+    },
+    Options :: [ Option ],
+    Option :: unescape
+            | {limit, pos_integer()},
+    Node :: #{
+        id => m_rsc:resource_id(),
+        label => binary(),
+        category => binary(),
+        category_name => binary(),
+        category_id => m_rsc:resource_id(),
+        edgesLoaded => boolean()
+    },
+    Edge :: #{
+        id => pos_integer(),
+        from => m_rsc:resource_id(),
+        to => m_rsc:resource_id(),
+        label => binary(),
+        predicate_id => m_rsc:resource_id()
+    }.
+get_graph(Ids, Options, Context) ->
+    Ids1 = lists:filtermap(
+        fun(Id) ->
+            case m_rsc:rid(Id, Context) of
+                undefined -> false;
+                RId ->
+                    case z_acl:rsc_visible(RId, Context) of
+                        true -> {true, RId};
+                        false -> false
+                    end
+            end
+        end,
+        Ids),
+    Limit = proplists:get_value(limit, Options, ?DEFAULT_GRAPH_EDGE_LIMIT),
+    Unescape = proplists:get_bool(unescape, Options),
+    Out = z_db:q("
+        select id, subject_id, predicate_id, object_id
+        from edge
+        where subject_id = any($1)
+        order by id desc
+        limit $2",
+        [ Ids1, Limit ],
+        Context),
+    In = z_db:q("
+        select id, subject_id, predicate_id, object_id
+        from edge
+        where object_id = any($1)
+        order by id desc
+        limit $2",
+        [ Ids1, Limit ],
+        Context),
+    IsTruncated = length(Out) >= Limit orelse length(In) >= Limit,
+    OutRscIds = [ ObjId || {_, _, _, ObjId} <- Out ],
+    InRscIds = [ SubjId || {_, SubjId, _, _} <- In ],
+    OutSet = sets:from_list(OutRscIds),
+    InSet = sets:from_list(InRscIds),
+    RootSet = sets:from_list(Ids1),
+    All = sets:union([ OutSet, InSet, RootSet ]),
+    AllIds = sets:to_list(All),
+    Nodes = lists:foldl(
+        fun(Id, Acc) ->
+            case z_acl:rsc_visible(Id, Context) of
+                true ->
+                    CatId = m_rsc:p_no_acl(Id, <<"category_id">>, Context),
+                    Acc#{
+                        Id => #{
+                            id => Id,
+                            label => title(Id, Unescape, Context),
+                            category => title(CatId, Unescape, Context),
+                            category_name => name(CatId, Context),
+                            category_id => CatId,
+                            edgesLoaded => sets:is_element(Id, RootSet)
+                        }
+                    };
+                false ->
+                    Acc
+            end
+        end,
+        #{},
+        AllIds),
+    Edges = lists:foldl(
+        fun({EdgeId, SubjId, PredId, ObjId}, Acc) ->
+            case not maps:is_key(EdgeId, Acc)
+                andalso maps:is_key(SubjId, Nodes)
+                andalso maps:is_key(ObjId, Nodes)
+            of
+                true ->
+                    Acc#{
+                        EdgeId => #{
+                            id => EdgeId,
+                            from => SubjId,
+                            to => ObjId,
+                            label => title(PredId, Unescape, Context),
+                            predicate_id => PredId
+                        }
+                    };
+                false ->
+                    Acc
+            end
+        end,
+        #{},
+        Out),
+    Edges1 = lists:foldl(
+        fun({EdgeId, SubjId, PredId, ObjId}, Acc) ->
+            case not maps:is_key(EdgeId, Acc)
+                andalso maps:is_key(SubjId, Nodes)
+                andalso maps:is_key(ObjId, Nodes)
+            of
+                true ->
+                    Acc#{
+                        EdgeId => #{
+                            id => EdgeId,
+                            from => SubjId,
+                            to => ObjId,
+                            label => title(PredId, Unescape, Context),
+                            predicate_id => PredId
+                        }
+                    };
+                false ->
+                    Acc
+            end
+        end,
+        Edges,
+        In),
+    {ok, #{
+        nodes => maps:values(Nodes),
+        edges => maps:values(Edges1),
+        is_truncated => IsTruncated
+    }}.
+
+title(Id, Unescape, Context) ->
+    case z_memo:get({title, Id}) of
+        undefined ->
+            T = z_trans:lookup_fallback(m_rsc:p_no_acl(Id, <<"title">>, Context), Context),
+            T1 = case z_utils:is_empty(T) of
+                true -> <<"(", (integer_to_binary(Id))/binary, ")">>;
+                false -> T
+            end,
+            T2 = case Unescape of
+                true -> z_html:unescape(T1);
+                false -> T1
+            end,
+            z_memo:set({title, Id}, T2),
+            T2;
+        Title ->
+            Title
+    end.
+
+name(Id, Context) ->
+    case m_rsc:p(Id, <<"name">>, Context) of
+        undefined -> <<>>;
+        Name -> Name
     end.
 
 %% @doc Get the complete edge with the id
@@ -239,7 +612,7 @@ get_edges(Subject, Context) ->
     ObjectId :: m_rsc:resource(),
     Context :: z:context(),
     EdgeId :: pos_integer(),
-    Reason :: {unknown_predicate, m_rsc:resource()} | object | subject | eacces.
+    Reason :: {unknown_predicate, m_rsc:resource()} | object | subject | eacces | unknown.
 insert(Subject, Pred, Object, Context) ->
     insert(Subject, Pred, Object, [], Context).
 
@@ -267,42 +640,80 @@ insert(Subject, Pred, Object, Opts, Context) ->
     end.
 
 insert1(SubjectId, PredId, ObjectId, Opts, Context) ->
-    case z_db:q1("select id
-              from edge
-              where subject_id = $1
-                and object_id = $2
-                and predicate_id = $3",
+    case z_db:q1("
+        select id
+        from edge
+        where subject_id = $1
+          and object_id = $2
+          and predicate_id = $3",
         [SubjectId, ObjectId, PredId],
         Context)
     of
         undefined ->
-            F = fun(Ctx) ->
-                SeqOpt = maybe_seq_opt(Opts, SubjectId, PredId, Ctx),
-                CreatedOpt = case proplists:get_value(created, Opts) of
-                                 DT when is_tuple(DT) -> [{created, DT}];
-                                 undefined -> []
-                             end,
-                EdgeProps = [
-                    {subject_id, SubjectId},
-                    {object_id, ObjectId},
-                    {predicate_id, PredId},
-                    {creator_id, case proplists:get_value(creator_id, Opts) of
-                                     undefined -> z_acl:user(Ctx);
-                                     CreatorId -> CreatorId
-                                 end}
-                    | (SeqOpt ++ CreatedOpt)
-                ],
-                z_db:insert(edge, EdgeProps, Ctx)
-            end,
             {ok, PredName} = m_predicate:id_to_name(PredId, Context),
             case z_acl:is_allowed(insert,
                                   #acl_edge{subject_id=SubjectId, predicate=PredName, object_id=ObjectId},
                                   Context)
             of
                 true ->
-                    {ok, EdgeId} = z_db:transaction(F, Context),
-                    z_edge_log_server:check(Context),
-                    {ok, EdgeId};
+                    Created = case proplists:get_value(created, Opts) of
+                        DT when is_tuple(DT) -> DT;
+                        undefined -> undefined
+                    end,
+                    CreatorId = case proplists:get_value(creator_id, Opts) of
+                        undefined -> z_acl:user(Context);
+                        CId -> CId
+                    end,
+                    Transaction = fun(Ctx) ->
+                        SeqOpt = maybe_seq_opt(Opts, SubjectId, PredId, Ctx),
+                        insert_edge_1(SubjectId, ObjectId, PredId, SeqOpt, CreatorId, Created, Ctx)
+                    end,
+                    case z_db:transaction(Transaction, Context) of
+                        {ok, 1, _, [{EdgeId}]} ->
+                            z_edge_log_server:check(Context),
+                            {ok, EdgeId};
+                        {ok, 0, _, []} ->
+                            % Race condition, edge might have been inserted by another transaction
+                            case z_db:q1("
+                                select id
+                                from edge
+                                where subject_id = $1
+                                  and object_id = $2
+                                  and predicate_id = $3",
+                                [SubjectId, ObjectId, PredId],
+                                Context)
+                            of
+                                undefined ->
+                                    % Some other error during insert -- should not happen
+                                    ?LOG_ERROR(#{
+                                        in => zotonic_core,
+                                        text => <<"Error inserting edge">>,
+                                        result => error,
+                                        reason => unknown,
+                                        subject_id => SubjectId,
+                                        predicate_id => PredId,
+                                        object_id => ObjectId,
+                                        creator_id => CreatorId,
+                                        created => Created
+                                    }),
+                                    {error, unknown};
+                                EdgeId ->
+                                    {ok, EdgeId}
+                            end;
+                        {error, Reason} ->
+                            ?LOG_ERROR(#{
+                                in => zotonic_core,
+                                text => <<"Error inserting edge">>,
+                                result => error,
+                                reason => Reason,
+                                subject_id => SubjectId,
+                                predicate_id => PredId,
+                                object_id => ObjectId,
+                                creator_id => CreatorId,
+                                created => Created
+                            }),
+                            {error, enoent}
+                    end;
                 false ->
                     {error, eacces}
             end;
@@ -311,13 +722,85 @@ insert1(SubjectId, PredId, ObjectId, Opts, Context) ->
             {ok, EdgeId}
 end.
 
+insert_edge_1(SubjectId, ObjectId, PredId, undefined, CreatorId, undefined, Context) ->
+    z_db:equery("
+        insert into edge
+            (subject_id, object_id, predicate_id, creator_id)
+        values
+            ($1, $2, $3, $4)
+        on conflict do nothing
+        returning id
+        ",
+        [
+            SubjectId,
+            ObjectId,
+            PredId,
+            CreatorId
+        ],
+        Context);
+insert_edge_1(SubjectId, ObjectId, PredId, Seq, CreatorId, undefined, Context) ->
+    z_db:equery("
+        insert into edge
+            (subject_id, object_id, predicate_id, seq, creator_id)
+        values
+            ($1, $2, $3, $4, $5)
+        on conflict do nothing
+        returning id
+        ",
+        [
+            SubjectId,
+            ObjectId,
+            PredId,
+            Seq,
+            CreatorId
+        ],
+        Context);
+insert_edge_1(SubjectId, ObjectId, PredId, undefined, CreatorId, Created, Context) ->
+    z_db:equery("
+        insert into edge
+            (subject_id, object_id, predicate_id, creator_id, created)
+        values
+            ($1, $2, $3, $4, $5)
+        on conflict do nothing
+        returning id
+        ",
+        [
+            SubjectId,
+            ObjectId,
+            PredId,
+            CreatorId,
+            Created
+        ],
+        Context);
+insert_edge_1(SubjectId, ObjectId, PredId, SeqOpt, CreatorId, Created, Context) ->
+    z_db:equery("
+        insert into edge
+            (subject_id, object_id, predicate_id, seq, creator_id, created)
+        values
+            ($1, $2, $3, $4, $5, $6)
+        on conflict do nothing
+        returning id
+        ",
+        [
+            SubjectId,
+            ObjectId,
+            PredId,
+            SeqOpt,
+            CreatorId,
+            Created
+        ],
+        Context).
+
+%% @doc Determine the sequence number for the new edge. Needed for imports with
+%% specific sequence order, or if the "is_insert_before" option is used or set for
+%% the predicate.
 maybe_seq_opt(Opts, SubjectId, PredId, Context) ->
     case proplists:get_value(seq, Opts) of
         S when is_integer(S) ->
-            [ {seq, S} ];
+            S;
         _ ->
-            case z_convert:to_bool( m_rsc:p_no_acl(PredId, is_insert_before, Context) )
-                orelse z_convert:to_bool( proplists:get_value(is_insert_before, Opts) )
+            case z_convert:to_bool( proplists:get_value(is_insert_before, Opts) )
+                orelse z_convert:to_bool( m_rsc:p_no_acl(PredId, <<"is_insert_before">>, Context) )
             of
                 true ->
                     case z_db:q1("
@@ -328,11 +811,11 @@ maybe_seq_opt(Opts, SubjectId, PredId, Context) ->
                         [SubjectId, PredId],
                         Context)
                     of
-                        undefined -> [];
-                        N -> [ {seq, N-1} ]
+                        undefined -> undefined;
+                        N -> N-1
                     end;
                 false ->
-                    []
+                    undefined
             end
     end.
 
@@ -887,6 +1370,37 @@ subjects(Object, Context) ->
             z_depcache:memo(F, {subjects, ObjectId}, ?HOUR, [ObjectId], Context)
     end.
 
+%% @doc Check if a resource has object edges, no caching is done.
+-spec has_objects(m_rsc:resource(), z:context()) -> boolean().
+has_objects(Subject, Context) ->
+    case m_rsc:rid(Subject, Context) of
+        undefined ->
+            false;
+        SubjectId ->
+            is_integer(
+                z_db:q1("
+                    select id from edge
+                    where subject_id = $1
+                    limit 1",
+                    [SubjectId],
+                    Context))
+    end.
+
+%% @doc Check if a resource has subject edges, no caching is done.
+-spec has_subjects(m_rsc:resource(), z:context()) -> boolean().
+has_subjects(Object, Context) ->
+    case m_rsc:rid(Object, Context) of
+        undefined ->
+            false;
+        ObjectId ->
+            is_integer(
+                z_db:q1("
+                    select id from edge
+                    where object_id = $1
+                    limit 1",
+                    [ObjectId],
+                    Context))
+    end.
 
 %% @doc Return all object ids with the edge id for a predicate/subject_id
 -spec object_edge_ids( m_rsc:resource(), m_rsc:resource(), z:context() ) -> [ {m_rsc:resource_id(), integer()} ].
@@ -997,9 +1511,9 @@ update_sequence(Subject, Pred, ObjectIds, Context) ->
         undefined ->
             {error, enoent};
         SubjectId ->
+            {ok, PredId} = m_predicate:name_to_id(Pred, Context),
             case z_acl:rsc_editable(SubjectId, Context) of
                 true ->
-                    {ok, PredId} = m_predicate:name_to_id(Pred, Context),
                     F = fun(Ctx) ->
                         All = z_db:q("
                                     select object_id, id
@@ -1293,4 +1807,3 @@ get_q(Name, Payload, Context) ->
         Value ->
             Value
     end.
-

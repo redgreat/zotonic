@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2015-2024 Marc Worrell
+%% @copyright 2015-2026 Marc Worrell
 %% @doc Model for registering the status per email recipient.
 %% @end
 
-%% Copyright 2015-2024 Marc Worrell
+%% Copyright 2015-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -19,6 +19,19 @@
 
 
 -module(m_email_status).
+-moduledoc("
+Tracks the send/bounce/error status of all outgoing emails.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/is_valid/+email/...` | Return the effective validity flag for `+email` from cached `email_status` data (normalized email, blocked/final-error aware); unknown addresses default to valid. |
+| `get` | `/+email/...` | Return the full `email_status` row for `+email` (delivery/error/block counters and timestamps) when caller is admin, has `mod_email_status` use rights, or may edit the user/resource owning that email identity. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 
 -behaviour (zotonic_model).
 
@@ -95,6 +108,8 @@ is_visible_email(Email, Context) ->
 -spec block(Email, Context) -> ok when
     Email :: binary(),
     Context :: z:context().
+block(<<>>, _Context) ->
+    ok;
 block(Email0, Context) ->
     Email = normalize(Email0),
     case z_db:q("
@@ -139,6 +154,12 @@ clear_status(Id, Email0, Context) ->
             {error, notfound}
     end.
 
+%% @doc Clear the error/block status of an address. If a recipient was blocked
+%% then this will re-enable sending email to this recipient. The email address
+%% must already be normalized.
+-spec clear_status(Email, Context) -> ok when
+    Email :: binary(),
+    Context :: z:context().
 clear_status(Email, Context) ->
     case z_db:q("update email_status
             set is_valid = true,
@@ -192,11 +213,15 @@ is_valid(Email, Context) ->
     IsOkToSend :: boolean(),
     IsBlocked :: boolean().
 is_valid_cached(Email0, Context) ->
-    Email = normalize(Email0),
-    z_depcache:memo(fun() -> is_valid_nocache(Email, Context) end,
-                    {email_is_valid, Email},
-                    ?DAY,
-                    Context).
+    case normalize(Email0) of
+        <<>> ->
+            {false, false, false};
+        Email ->
+            z_depcache:memo(fun() -> is_valid_nocache(Email, Context) end,
+                            {email_is_valid, Email},
+                            ?DAY,
+                            Context)
+    end.
 
 -spec is_valid_nocache(Email, Context) -> {IsValid, IsOkToSend, IsBlocked} when
     Email :: binary(),
@@ -238,7 +263,7 @@ get(Email0, Context) ->
 mark_received(Email0, Context) ->
     Email = normalize(Email0),
     {IsValid, _IsOkToSend, _IsBlocked} = is_valid_nocache(Email, Context),
-    case z_db:q("
+    case z_db:q1("
             update email_status
             set is_valid = true,
                 receive = now(),
@@ -268,7 +293,7 @@ mark_received(Email0, Context) ->
 mark_read(Email0, Context) ->
     Email = normalize(Email0),
     {IsValid, _IsOkToSend, _IsBlocked} = is_valid_nocache(Email, Context),
-    case z_db:q("
+    case z_db:q1("
             update email_status
             set is_valid = not is_blocked,
                 read = now(),
@@ -301,7 +326,7 @@ mark_read(Email0, Context) ->
 mark_sent(Email0, false, Context) ->
     Email = normalize(Email0),
     {IsValid, _IsOkToSend, _IsBlocked} = is_valid_nocache(Email, Context),
-    case z_db:q("
+    case z_db:q1("
             update email_status
             set sent = now(),
                 sent_ct = sent_ct + 1,
@@ -325,7 +350,7 @@ mark_sent(Email0, false, Context) ->
 mark_sent(Email0, true, Context) ->
     Email = normalize(Email0),
     {IsValid, _IsOkToSend, _IsBlocked} = is_valid_nocache(Email, Context),
-    case z_db:q("
+    case z_db:q1("
         update email_status
         set is_valid = not is_blocked,
             recent_error_ct = 0,
@@ -353,46 +378,54 @@ mark_sent(Email0, true, Context) ->
     Status :: binary() | {error, term()} | undefined,
     Context :: z:context().
 mark_failed(Email0, IsFinal, Status, Context) ->
-    Email = normalize(Email0),
-    {IsValid, _IsOkToSend, _IsBlocked} = is_valid_nocache(Email, Context),
-    Status1 = z_string:truncatechars(to_binary(Status), 490),
-    z_db:transaction(
-                fun(Ctx) ->
-                    case z_db:q("
-                        select recent_error
-                        from email_status
-                        where email = $1",
-                        [Email],
-                        Ctx)
-                    of
-                        [] ->
-                            z_db:q(
-                                "insert into email_status
-                                    (email, is_valid, error_is_final, error, error_status,
-                                     error_ct, recent_error_ct, recent_error, modified)
-                                 values ($1, false, $2, now(), $3, 1, $4, now(), now())",
-                                [Email, IsFinal, Status1, 1],
-                                Ctx);
-                        [{LastRecent}] ->
-                            {RecentDelta, RecentDate} = new_recent_error(LastRecent, IsFinal, Status1),
-                            z_db:q("
-                                update email_status
-                                set is_valid = false,
-                                    error = now(),
-                                    error_is_final = $2,
-                                    error_status = $3,
-                                    error_ct = error_ct + 1,
-                                    recent_error_ct = recent_error_ct + $4,
-                                    recent_error = $5,
-                                    modified = now()
+    case normalize(Email0) of
+        <<>> ->
+            ok;
+        Email ->
+            {IsValid, _IsOkToSend, _IsBlocked} = is_valid_nocache(Email, Context),
+            Status1 = if
+                Status =:= undefined -> undefined;
+                true -> z_string:truncatechars(to_binary(Status), 490)
+            end,
+            z_db:transaction(
+                        fun(Ctx) ->
+                            case z_db:q("
+                                select recent_error
+                                from email_status
                                 where email = $1",
-                                [Email, IsFinal, Status1, RecentDelta, RecentDate],
-                                Ctx),
-                            ok
-                    end
-               end,
-               Context),
-    maybe_notify(Email, IsValid, false, IsFinal, false, Context).
+                                [Email],
+                                Ctx)
+                            of
+                                [] ->
+                                    Status2 = z_convert:to_binary(Status1),
+                                    z_db:q(
+                                        "insert into email_status
+                                            (email, is_valid, error_is_final, error, error_status,
+                                             error_ct, recent_error_ct, recent_error, modified)
+                                         values ($1, false, $2, now(), $3, 1, $4, now(), now())",
+                                        [Email, IsFinal, Status2, 1],
+                                        Ctx);
+                                [{LastRecent}] ->
+                                    {RecentDelta, RecentDate} = new_recent_error(LastRecent, IsFinal, Status1),
+                                    z_db:q("
+                                        update email_status
+                                        set is_valid = false,
+                                            error = now(),
+                                            error_is_final = $2,
+                                            error_status = coalesce($3, error_status),
+                                            error_ct = error_ct + 1,
+                                            recent_error_ct = recent_error_ct + $4,
+                                            recent_error = $5,
+                                            modified = now()
+                                        where email = $1",
+                                        [Email, IsFinal, Status1, RecentDelta, RecentDate],
+                                        Ctx),
+                                    ok
+                            end
+                       end,
+                       Context),
+            maybe_notify(Email, IsValid, false, IsFinal, false, Context)
+    end.
 
 
 new_recent_error(LastRecent, IsFinal, Status) ->
@@ -413,19 +446,37 @@ new_recent_error(LastRecent, IsFinal, Status) ->
 is_unrecoverable_error(<<"605", _/binary>>) ->
     % mailgun - not trying again as they blocked the email address
     true;
-is_unrecoverable_error(<<"550", _/binary>> = Status) ->
+is_unrecoverable_error(<<C, _/binary>> = Status) when C =:= $5; C =:= $6 ->
     S = z_string:to_lower(Status),
+    is_unknown_mailbox(S) orelse is_permanent_mailgun_error(Status);
+is_unrecoverable_error(S) when is_binary(S) ->
+    is_permanent_mailgun_error(S) orelse is_permanent_zotonic_relay_error(S);
+is_unrecoverable_error(_Status) ->
+    false.
+
+is_unknown_mailbox(S) ->
     binary:match(S, <<"mailbox unavailable">>) =/= nomatch          % hotmail
     orelse binary:match(S, <<"does not exist">>) =/= nomatch        % gmail / ziggo
+    orelse binary:match(S, <<"tried to reach is inactive">>) =/= nomatch  % gmail
     orelse binary:match(S, <<"access denied">>) =/= nomatch         % outlook
     orelse binary:match(S, <<"unknown user">>) =/= nomatch
     orelse binary:match(S, <<"user unknown">>) =/= nomatch
     orelse binary:match(S, <<"no such user">>) =/= nomatch
+    orelse binary:match(S, <<"not a known user">>) =/= nomatch
     orelse binary:match(S, <<"user invalid">>) =/= nomatch
-    orelse binary:match(S, <<"recipient rejected">>) =/= nomatch;
-is_unrecoverable_error(_) ->
-    false.
+    orelse binary:match(S, <<"mailbox unavailable">>) =/= nomatch
+    orelse binary:match(S, <<"recipient rejected">>) =/= nomatch
+    orelse binary:match(S, <<"failed to deliver due to bounce">>) =/= nomatch  % mailgun
+    orelse binary:match(S, <<"check email address">>) =/= nomatch.
 
+% Mailgun: unsure the status code of these messages, so match error text.
+is_permanent_mailgun_error(S) ->
+    binary:match(S, <<"Not delivering to a user who marked your messages as spam">>) =/= nomatch
+    orelse binary:match(S, <<"Not delivering to previously bounced address">>) =/= nomatch.
+
+is_permanent_zotonic_relay_error(S) ->
+    binary:match(S, <<"Sender blocked by Zotonic module">>) =/= nomatch
+    orelse binary:match(S, <<"Recipient blocked by Zotonic module">>) =/= nomatch.
 
 to_binary({error, nxdomain}) ->
     <<"Non-Existent Domain">>;
@@ -442,45 +493,48 @@ to_binary(V) ->
     Email :: binary(),
     Context :: z:context().
 mark_bounced(Email0, Context) ->
-    Email = normalize(Email0),
-    {IsValid, _IsOkToSend, _IsBlocked} = is_valid_nocache(Email, Context),
-    z_db:transaction(
-        fun(Ctx)->
-            case z_db:q("
-                select recent_error
-                from email_status
-                where email = $1",
-                [Email],
-                Ctx)
-            of
-                [] ->
-                    % Bounce without a 'sent', ignore.
-                    ok;
-                [{RecentError}] ->
-                    Now = calendar:universal_time(),
-                    Yesterday = z_datetime:prev_day(Now),
-                    {RecentErrorDelta, RecentError1} = case RecentError of
-                        undefined -> {1, Now};
-                        D when D > Yesterday -> {0, RecentError};
-                        _ -> {1, Now}
-                    end,
-                    z_db:q("
-                        update email_status
-                        set is_valid = false,
-                            bounce = now(),
-                            bounce_ct = bounce_ct + 1,
-                            recent_error_ct = recent_error_ct + $2,
-                            recent_error = $3,
-                            modified = now()
-                        where email = $1
-                        ",
-                        [Email, RecentErrorDelta, RecentError1],
+    case normalize(Email0) of
+        <<>> ->
+            ok;
+        Email ->
+            {IsValid, _IsOkToSend, _IsBlocked} = is_valid_nocache(Email, Context),
+            z_db:transaction(
+                fun(Ctx)->
+                    case z_db:q("
+                        select recent_error
+                        from email_status
+                        where email = $1",
+                        [Email],
                         Ctx)
-            end
-        end,
-        Context),
-    maybe_notify(Email, IsValid, false, true, false, Context),
-    ok.
+                    of
+                        [] ->
+                            % Bounce without a 'sent', ignore.
+                            ok;
+                        [{RecentError}] ->
+                            Now = calendar:universal_time(),
+                            Yesterday = z_datetime:prev_day(Now),
+                            {RecentErrorDelta, RecentError1} = case RecentError of
+                                undefined -> {1, Now};
+                                D when D > Yesterday -> {0, RecentError};
+                                _ -> {1, Now}
+                            end,
+                            z_db:q("
+                                update email_status
+                                set is_valid = false,
+                                    bounce = now(),
+                                    bounce_ct = bounce_ct + 1,
+                                    recent_error_ct = recent_error_ct + $2,
+                                    recent_error = $3,
+                                    modified = now()
+                                where email = $1
+                                ",
+                                [Email, RecentErrorDelta, RecentError1],
+                                Ctx)
+                    end
+                end,
+                Context),
+            maybe_notify(Email, IsValid, false, true, false, Context)
+    end.
 
 maybe_notify(_Email, IsValid, IsValid, false, _IsManual, _Context) ->
     ok;
@@ -492,7 +546,8 @@ maybe_notify(Email, _OldIsValid, IsValid, IsFinal, IsManual, Context) ->
                         is_final = IsFinal,
                         is_manual = IsManual
                     },
-                    Context).
+                    Context),
+    ok.
 
 
 %% @doc Normalize an email address, makes it compatible with the email addresses in m_identity.
@@ -505,13 +560,15 @@ normalize(Email) ->
     Context :: z:context(),
     RowsDeleted :: non_neg_integer().
 periodic_cleanup(Context) ->
-    z_db:q("
+    z_db:q1("
         delete from email_status
         where modified < now() - interval '2 years'
           and not is_blocked
           and (    bounce is null
                 or sent is null
                 or bounce < sent)
+          and (    recent_error is null
+               or  recent_error_ct < 5)
         ",
         Context).
 
@@ -587,4 +644,3 @@ install(Context) ->
             end
     end,
     ok.
-

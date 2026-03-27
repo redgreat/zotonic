@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2024 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Mailinglist model.
 %% @end
 
-%% Copyright 2009-2024 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,29 @@
 %% limitations under the License.
 
 -module(m_mailinglist).
+-moduledoc("
+Model for mailinglist operations and reporting, including recipient counts, delivery stats, subscriptions, and scheduled mailings.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/count_recipients/+mailingid/...` | Return count information from `z_acl:is_allowed`. |
+| `get` | `/stats/+mailingid/...` | Return stats from `z_acl:rsc_editable`. |
+| `get` | `/rsc_stats/+rscid/...` | Return rsc stats from `z_acl:is_allowed`. |
+| `get` | `/recipient/+recipientid/...` | Return mailinglist recipient record for recipient id `+recipientid`. |
+| `get` | `/scheduled/+rscid/...` | Return scheduled mailing jobs/entries associated with resource `+rscid`. |
+| `get` | `/confirm_key/+confirmkey/...` | Return subscription confirmation payload for confirmation key `+confirmkey`. |
+| `get` | `/subscription/+listid/+email/...` | Return `subscription` result for `+listid` and `+email` using `z_acl:is_allowed`. |
+| `get` | `/subscriptions` | Return mailinglist subscriptions for the currently authenticated user. No further lookups. |
+| `get` | `/subscriptions/key/+undefined/...` | Return subscriptions for the currently authenticated user (same result as `/subscriptions`) when no key value is present. |
+| `get` | `/subscriptions/key/+key/...` | Decode recipient key `+key` and return matching subscriptions by email or recipient/list id encoded in that key. |
+| `get` | `/subscriptions/+rscid/...` | Return subscriptions list for user/resource id `+rscid`. |
+| `get` | `/subscriptions/+key/...` | Return subscriptions list decoded from subscriptions key/token `+key`. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 -behaviour(zotonic_model).
@@ -469,7 +492,6 @@ insert_recipient_1(ListId, Email, Props, WelcomeMessageType, Context) ->
                               from mailinglist_recipient
                               where mailinglist_id = $1
                                 and email = $2", [ListId, Email1], Context),
-            ConfirmKey = z_ids:id(20),
             {RecipientId, WelcomeMessageType1} = case Rec of
                 {RcptId, true, _OldConfirmKey} ->
                     %% Present and enabled
@@ -477,18 +499,22 @@ insert_recipient_1(ListId, Email, Props, WelcomeMessageType, Context) ->
                 {RcptId, false, OldConfirmKey} ->
                     %% Present, but not enabled
                     NewConfirmKey = case OldConfirmKey of
-                        undefined -> ConfirmKey;
+                        undefined -> z_ids:id(20);
                         _ -> OldConfirmKey
                     end,
                     case WelcomeMessageType of
                         send_confirm ->
-                            case NewConfirmKey of
-                                OldConfirmKey -> nop;
-                                _ -> z_db:q("update mailinglist_recipient
-                                             set confirm_key = $2
-                                             where id = $1", [RcptId, NewConfirmKey], Context)
+                            if
+                                NewConfirmKey =:= OldConfirmKey ->
+                                    nop;
+                                true ->
+                                    z_db:q("update mailinglist_recipient
+                                            set confirm_key = $2
+                                            where id = $1",
+                                           [RcptId, NewConfirmKey],
+                                           Context)
                             end,
-                            {RcptId, {send_confirm, NewConfirmKey}};
+                            {RcptId, send_confirm};
                         _ ->
                             z_db:q("update mailinglist_recipient
                                     set is_enabled = true,
@@ -507,8 +533,11 @@ insert_recipient_1(ListId, Email, Props, WelcomeMessageType, Context) ->
                         {mailinglist_id, ListId},
                         {is_enabled, IsEnabled},
                         {email, Email1},
-                        {confirm_key, ConfirmKey}
-                    ] ++ [ {K, case is_list(V) of true-> z_convert:to_binary(V); false -> V end} || {K,V} <- Props ],
+                        {confirm_key, z_ids:id(20)}
+                    ] ++ [
+                        {K, if is_list(V) -> z_convert:to_binary(V); true -> V end}
+                        || {K,V} <- Props
+                    ],
                     {ok, RcptId} = z_db:insert(mailinglist_recipient, Cols, Context),
                     {RcptId, WelcomeMessageType}
             end,
@@ -617,7 +646,7 @@ lines_to_recipients(Lines) ->
     lines_to_recipients(Lines, []).
 
 lines_to_recipients([], Acc) ->
-    Acc;
+    lists:reverse(Acc);
 lines_to_recipients([Line|Lines], Acc) ->
     %% Split every line on tab
     Trimmed = z_string:trim( z_convert:to_binary(Line) ),
@@ -626,7 +655,10 @@ lines_to_recipients([Line|Lines], Acc) ->
             lines_to_recipients(Lines, Acc);
         {ok, Row} ->
             R = line_to_recipient(Row),
-            lines_to_recipients(Lines, [R|Acc])
+            case z_email_utils:is_email(proplists:get_value(email, R)) of
+                true -> lines_to_recipients(Lines, [R|Acc]);
+                false -> lines_to_recipients(Lines, Acc)
+            end
     end.
 
 line_to_recipient([ Email ]) ->

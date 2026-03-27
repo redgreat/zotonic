@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2012 Marc Worrell
 %% @doc Convert a value to binary
+%% @end
 
 %% Copyright 2012 Marc Worrell
 %%
@@ -17,6 +18,23 @@
 %% limitations under the License.
 
 -module(filter_to_binary).
+-moduledoc("
+Convert the input to a binary value.
+
+Example:
+
+
+```django
+{{ 42|to_binary }}
+```
+
+Results in the binary value `<<\"42\"\\>\\>`.
+
+This filter uses the `z_convert:to_binary/1` function.
+
+See also
+
+[stringify](/id/doc_template_filter_filter_stringify)").
 -export([to_binary/2]).
 
 to_binary(undefined, _Context) ->

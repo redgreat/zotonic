@@ -1,6 +1,7 @@
 %% @author Dirk Geurs <dirk@driebit.nl>
 %% @copyright 2015 Driebit BV
 %% @doc Force the input to a value
+%% @end
 
 %% Copyright 2015 Driebit BV
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(filter_make_value).
+-moduledoc("
+Todo
+
+Not yet documented.
+").
 -export([make_value/2]).
 
 make_value(In, Context) ->

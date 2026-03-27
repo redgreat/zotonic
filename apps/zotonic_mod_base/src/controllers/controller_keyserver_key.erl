@@ -1,6 +1,7 @@
 %% @author Maas-Maarten Zeeman <maas@channel.me>
 %% @copyright 2018 Maas-Maarten Zeeman <maas@channel.me>
 %% @doc Retrieve the public key of the keyserver.
+%% @end
 
 %% Copyright 2018 Maas-Maarten Zeeman
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(controller_keyserver_key).
+-moduledoc("
+Todo
+
+Not yet documented.
+").
 -author("Maas-Maarten Zeeman <maas@channel.me>").
 
 -export([

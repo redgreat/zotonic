@@ -1,7 +1,7 @@
 %% @author Maas-Maarten Zeeman <mmzeeman@xs4all.nl>
 %% @copyright 2015 Marc Worrell
-%% Date: 2015-10-22
 %% @doc Simple resource that just returns "Hello, World!".
+%% @end
 
 %% Copyright 2015 Maas-Maarten Zeeman
 %%
@@ -18,6 +18,14 @@
 %% limitations under the License.
 
 -module(controller_hello_world).
+-moduledoc("
+Simple controller that always serves the string `Hello, World!`
+
+This controller can be used for a dispatch rule to check if the server is responding.
+
+See also
+
+[controller_ping](/id/doc_controller_controller_ping)").
 -author("Maas-Maarten Zeeman <mmzeeman@xs4all.nl").
 
 -export([

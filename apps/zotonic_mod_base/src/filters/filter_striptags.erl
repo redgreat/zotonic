@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2010-2024 Marc Worrell
+%% @copyright 2010-2025 Marc Worrell
 %% @doc 'striptags' filter, remove (x)html tags
 %% @end
 
-%% Copyright 2010-2024 Marc Worrell
+%% Copyright 2010-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,22 +18,43 @@
 %% limitations under the License.
 
 -module(filter_striptags).
+-moduledoc("
+Removes all HTML tags from the value.
+
+Useful as part of filtering input from external sources.
+
+For example:
+
+
+```django
+{{ value|striptags }}
+```
+
+When value is “&lt;b>Hello</b>world” then the output will be “Helloworld”.
+
+Striptags optionally allows a maximum length of characters to be returned:
+
+
+```django
+{{ value|striptags:80 }}
+```
+
+This returns a string truncated to max 80 characters, including whitespaces etc.
+").
 
 -export([striptags/2, striptags/3]).
 
 -include_lib("zotonic_core/include/zotonic.hrl").
 
 %% @doc Strip the HTML tags from a string.
--spec striptags(In, Context) -> binary() | undefined when
-    In :: undefined | iodata() | #trans{} | atom() | integer() | float(),
+-spec striptags(In, Context) -> binary() | number() | undefined when
+    In :: undefined | iodata() | z:trans() | atom() | number(),
     Context :: z:context().
 striptags(undefined, _Context) ->
     undefined;
 striptags(null, _Context) ->
     undefined;
-striptags(In, _Context) when is_integer(In) ->
-    In;
-striptags(In, _Context) when is_float(In) ->
+striptags(In, _Context) when is_number(In) ->
     In;
 striptags(In, Context) when is_atom(In) ->
     striptags(atom_to_binary(In, utf8), Context);
@@ -45,7 +66,7 @@ striptags(_In, _Context) ->
     undefined.
 
 %% @doc Strip the HTML tags from a string, return at most MaxLen characters.
--spec striptags(In, MaxLen, Context) -> binary() | undefined when
+-spec striptags(In, MaxLen, Context) -> binary() | number() | undefined when
     In :: undefined | iodata() | #trans{} | atom() | integer() | float(),
     MaxLen :: integer() | binary(),
     Context :: z:context().
@@ -53,9 +74,7 @@ striptags(undefined, _MaxLen, _Context) ->
     undefined;
 striptags(null, _MaxLen, _Context) ->
     undefined;
-striptags(In, _MaxLen, _Context) when is_integer(In) ->
-    In;
-striptags(In, _MaxLen, _Context) when is_float(In) ->
+striptags(In, _MaxLen, _Context) when is_number(In) ->
     In;
 striptags(In, MaxLen, Context) when is_atom(In) ->
     striptags(atom_to_binary(In, utf8), MaxLen, Context);

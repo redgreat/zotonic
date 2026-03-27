@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2019 Marc Worrell
 %% @doc 'as_name' filter, translate a string to a 'name'
+%% @end
 
 %% Copyright 2019 Marc Worrell
 %%
@@ -17,6 +18,18 @@
 %% limitations under the License.
 
 -module(filter_to_name).
+-moduledoc("
+Map a string to a *name*. That is a lowercased string with only `[a-z0-9_]` characters.
+
+Example:
+
+
+```erlang
+{{ \"Hello World!\"|to_name }}
+```
+
+Results in the string value `hello_world`.
+").
 -export([to_name/2]).
 
 

@@ -1,7 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
-%% Date: 2010-01-19
 %% @doc Creates an editable overview of all categories.
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -18,6 +18,14 @@
 %% limitations under the License.
 
 -module(controller_admin_comments).
+-moduledoc("
+Shows an admin screen with an overview of most recently created comments. The screen offers the option to moderate the
+comments or delete them entirely.
+
+Todo
+
+Extend documentation
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -export([

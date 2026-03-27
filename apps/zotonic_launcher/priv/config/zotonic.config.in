@@ -49,6 +49,10 @@
 %%% Server header returned by Cowboy, defaults to "Zotonic"
    %% {server_header, "Zotonic"},
 
+%%% Email address for admin emails, sent to both the site's admin and this email
+%%% address (if defined).
+   %% {admin_email, ""},
+
 %%% IP address on which Zotonic will listen for HTTP requests.
 %%% Always overridden by the ZOTONIC_IP environment variable.
 %%% This can be a tuple, or a (domain) string ("localhost" or "127.0.0.1")
@@ -147,6 +151,8 @@
    %% {smtp_ssl, false},
    %% {smtp_username, undefined},
    %% {smtp_password, undefined},
+   %% {smtp_relay_tls_options, []},
+   %% {smtp_max_senders, 5},
 
 %%% SMTP fallback to plaintext delivery if the TLS connection failed.
 %%% This defaults to 'true' because many SMTP servers use self-signed certificates, which will
@@ -181,6 +187,12 @@
    %% {smtp_listen_ip, "127.0.0.1"},
    %% {smtp_listen_port, 2525},
 
+%%% Maximum size of received messages, defaults to 20MB.
+   %% {smtp_listen_size, 20971520},
+
+%%% Enable STARTTLS extension on incoming SMTP connections
+   %% {smtp_starttls, true},
+
 %%% SMTP Spamassassin options
 %%% Enable SMTP incoming message filtering by setting the listening address of spamd
    %% {smtp_spamd_ip, {127,0,0,1}},
@@ -211,6 +223,10 @@
 %%% The value 'local' is using an optimized matching method and equals to:
 %%%   - "127.0.0.0/8,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12,169.254.0.0/16,::1,fd00::/8,fe80::/10,100.64.0.0/10"
    %% {ip_allowlist, local},
+
+%%% IP allowlist for the admin user if the password is not the default 'admin' password.
+%%% Default no restriction.
+   %% {ip_allowlist_admin, any},
 
 %%% Zotonic Status IP allowlist, used for restricting access to system management screens. Default no restriction.
    %% {ip_allowlist_system_management, any},
@@ -264,6 +280,12 @@
 %%% Show a growl message on the terminal if a file is compiled or handled.
    %% {filewatcher_terminal_notifier, true},
 
+%%% Allow the development module to set traces on functions. Default only enabled on
+%%% a Zotonic server with default environment 'development' or 'test'
+%%% Enabling this will will allow the admin user to trace almost all functions in the
+%%% running server and is a security risk.
+   %% {function_tracing_enabled, true},
+
 %%% Maximum number of entries in the metrics log buffer. There are two buffers, one for 1/2/3xx
 %%% results and one for 4/5xx results. All metrics are buffered so that the loggers can easily
 %%% handle spikes.
@@ -277,11 +299,108 @@
 %%% to the session and page-sessions. Default is 50% of the process_limit.
    %% {sidejobs_limit, 100000},
 
+%%% Maximum number of concurrent spawned ImageMagick image resizers. More CPU cores and memory
+%%% allows more resizers at the same time. Default is 3.
+   %% {media_resizer_limit, 3},
+
+%%% 'tar' command to be used when archiving files, also used by mod_backup
+   %% {tar, "tar"},
+
+%%% 'pg_dump' command to be used when dumping a site's schema, also used by mod_backup
+   %% {pg_dump, "pg_dump"},
+
 %%% Password for the sites administration site (zotonic_status). Will be generated on
 %%% first Zotonic startup, if the zotonic.config file does not yet exist.
 %%% The corresponding account name is 'wwwadmin'
    {password, "%%GENERATED%%"}
 
+  ]
+ },
+
+ %%% Server wide configuration for the mod_filestore. If mod_filestore is enabled then
+ %%% it will use this configuration, unless is_config_locked is false and there is a
+ %%% local site configuration.
+ {zotonic_mod_filestore, [
+      %%% Lock the config, prevent changing per site.
+      {is_config_locked, false},
+
+      %%% Service to be used: s3, ftp or webdav.
+      {service, "s3"},
+
+      %%% URL of the cloud files store. Start with http/https for S3, ftp/ftps for FTP and
+      %%% webdav/webdavs for WebDAV.  If "{{site}}" is found in the URL, it will be replaced
+      %%% with the name of the site, otherwise the sitename will be appended to the URL (so
+      %%% the files are uploaded in a directory per site).
+      {s3url, ""},
+
+      %%% The s3 key or ftp/webdav username.
+      {s3key, ""},
+
+      %%% The s3 secret or ftp/webdav password.
+      {s3secret, ""},
+
+      %%%% The optional TLS options for the connection. Empty list or undefined for the
+      %%%% default options, as determined by the used filestore protocol application.
+      %%%% Example of TLS options:
+      %%%% [ {verify_fun, {fun ssl_verify_fingerprint:verify_fun/3,
+      %%%%         [{check_fingerprint, {sha, "D79F076110B39293E349AC89845B0380C19E2F8B"} }]}},
+      %%%%   {verify, verify_none}
+      %%%% ].
+      {tls_options, []},
+
+      %%% Set to true to upload new files (or previews) to the file store service.
+      {is_upload_enabled, true},
+
+      %%% Set to true to keep files on the local server disk after uploading. If this is set
+      %%% then the file store functions as a backup of all the files.
+      {is_local_keep, false},
+
+      %%% Waiting period to delete files on the remote server after they are deleted locally
+      %%% from the site. Possible values are "0" form an immediate delete, a number is a number
+      %%% of seconds, or "N days", "N weeks" or "N months" (where N is a number).
+      %%% Leave empty to use the default of mod_filestore, currently "5 weeks", which matches
+      %%% the number of weekly backups by mod_backup.
+      {delete_interval, ""}
+  ]
+ },
+
+ %%% Server wide configuration for the mod_backup. If mod_backup is enabled then
+ %%% it will use this configuration, unless is_config_locked is false and there is a
+ %%% local site configuration.
+ %%% See also the Zotonic configs 'tar' and 'pg_dump'.
+ {zotonic_mod_backup, [
+      %%% Lock the config, prevent changing per site.
+      {is_config_locked, false},
+
+      %%% Make a daily dump of the database and/or files.
+      %%% Possible values:
+      %%% 0 - no daily dump
+      %%% 1 - database dump and files (archive) tar
+      %%% 2 - database only dump
+      %%% If mod_filestore is enabled the the files are NOT backed up, as it is
+      %%% assumed that the filestore module will backup the files.
+      {daily_dump, 0},
+
+      %%% The database (and config) backup can be encrypted. Set this to true to
+      %%% enable encryption.
+      {encrypt_backups, false},
+
+      %%% The database (and config) backup can be encrypted using this password.
+      %%% If not set and the encrypt_backups is set, then the site will generate
+      %%% a password and set it in the site's config key site.backup_encrypt_password.
+      {backup_encrypt_password, ""},
+
+      %%% On the admin resource page, show the revisions panel to restore a previous
+      %%% revision. With this panel it is also possible to download or upload a dump
+      %%% of the current resource. This configuration can be overruled by the site's
+      %%% admin_panel configuration.
+      {admin_panel, false},
+
+      %%% Allow a user with the use.mod_backup permission to download backup files.
+      {allow_backup_download, true},
+
+      %%% Allow a user with the use.mod_backup permission to start backups manually.
+      {allow_manual_backup, true}
   ]
  }
 ].

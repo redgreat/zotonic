@@ -1,8 +1,8 @@
 %% @author Arjan Scherpenisse <arjan@scherpenisse.net>
 %% @copyright 2011 Arjan Scherpenisse <arjan@scherpenisse.net>
-%% Date: 2011-09-29
 
 %% @doc Returns the index the given item is in the given list.
+%% @end
 
 %% Copyright 2011 Arjan Scherpenisse
 %%
@@ -19,6 +19,23 @@
 %% limitations under the License.
 
 -module(filter_index_of).
+-moduledoc("
+Returns the index of the first occurrence of the item in the given list.
+
+For example:
+
+
+```django
+{{ [44,11,2,443,2]|index_of:11 }}
+```
+
+Returns `2`.
+
+**Note:** Erlang list indices are always 1-based.
+
+See also
+
+[element](/id/doc_template_filter_filter_element)").
 -author("Arjan Scherpenisse <arjan@scherpenisse.net>").
 
 -include_lib("zotonic_core/include/zotonic.hrl").

@@ -1,6 +1,7 @@
 %% @author Arjan Scherpenisse
 %% @copyright 2022 Arjan Scherpenisse
 %% @doc Export the ACL rules in a format that can be imported again.
+%% @end
 
 %% Copyright 2022 Arjan Scherpenisse
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(controller_admin_acl_rules_export).
+-moduledoc("
+Todo
+
+Not yet documented.
+").
 
 -export([
         service_available/1,

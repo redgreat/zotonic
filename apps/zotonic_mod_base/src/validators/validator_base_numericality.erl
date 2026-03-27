@@ -1,9 +1,10 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Validator for checking if an input value is a number and within a certain range.
 %%      At the moment this function only accepts integers
+%% @end
 
-%% Copyright 2009 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +19,50 @@
 %% limitations under the License.
 
 -module(validator_base_numericality).
+-moduledoc("
+Numerical input and range check.
+
+Checks if the input is a number and within a certain range or equal to a fixed value. At the moment only integer inputs
+are allowed.
+
+Arguments are is, minimum and maximum.
+
+For example, when the input must be 42:
+
+
+```django
+<input type=\"text\" id=\"number\" name=\"number\" value=\"\" />
+{% validate id=\"number\" type={numericality is=42} %}
+```
+
+And for a number within a certain range:
+
+
+```django
+<input type=\"text\" id=\"percent\" name=\"percent\" value=\"\" />
+{% validate id=\"percent\" type={numericality minimum=0 maximum=100} %}
+```
+
+
+
+Arguments
+---------
+
+| Argument                     | Description                                                                      | Example                    |
+| ---------------------------- | -------------------------------------------------------------------------------- | -------------------------- |
+| is                           | Tests for equality.                                                              | `is=42`                    |
+| minimum                      | Minimum value.                                                                   | `minimum=1`                |
+| maximum                      | Maximum value.                                                                   | `maximum=100`              |
+| is\\\\_float                   | Boolean flag which tells if the input can be a floating point number. Defaults to false. | `is_float` `is_float=true` |
+| not\\\\_a\\\\_number\\\\_message   | Message to show when the entered value is not a number. Defaults to “Must be a number.” | `not_a_number_message=\"*\"` |
+| not\\\\_an\\\\_integer\\\\_message | Message to show when the entered number is not an integer. Defaults to “Must be an integer.” |                            |
+| wrong\\\\_number\\\\_message     | Message to show when the entered number is unequal to the .is. argument. Defaults to “Must be ..” |                            |
+| too\\\\_low\\\\_message          | Message for when the entered number is less than the minimum allowed. Defaults to “Must not be less than ..” |                            |
+| too\\\\_high\\\\_message         | Message for when the entered number is greater than the maximum allowed. Defaults to “Must not be more than ..” |                            |
+
+See also
+
+[Forms and validation](/id/doc_developerguide_forms_and_validation#guide-validators)").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_validator/5, validate/5]).
 
@@ -37,7 +82,8 @@ render_validator(numericality, TriggerId, _TargetId, Args, _Context)  ->
 	{[IsFloat, to_number(Min),to_number(Max)], Script}.
 
 
-%% @spec validate(Type, TriggerId, Values, Args, Context) -> {ok,AcceptedValue} | {error,Id,Error}
+-spec validate(term(), term(), term(), list(), z:context()) ->
+    {{ok, term()}, z:context()} | {{error, term(), term()}, z:context()}.
 %%          Error = invalid | novalue | {script, Script}
 validate(numericality, Id, Value, [IsFloat,Min,Max], Context) ->
     Result = case z_string:trim(Value) of

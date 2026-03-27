@@ -5,7 +5,8 @@
 {% block body %}
 
 {% if is_result_email %}
-	<p>{_ This is a result for: _} <a href="{{ id.page_url_abs }}">{{ id.title }}</a></p>
+	<p>{_ This is a result for: _} <a href="{{ id.page_url_abs }}">{{ id.title }}</a><br/>
+	{_ You cannot reply to this email. _}</p>
 	{% block edit_answer %}
 		{% if is_result_email %}
 			<p><a href="{% url admin_edit_rsc id=id absolute_url %}">{_ Check the answer in the admin. _}</a></p>
@@ -25,12 +26,12 @@
 
 {% block test_result %}
 	{% if id.survey_test_percentage and result %}
-	    {% with id|survey_test_max_points as max_points %}
-	    	{% if max_points %}
+	    {% if id|survey_test_max_points as max_points %}
+	    	{% with result.points >= max_points * (id.survey_test_percentage / 100) as is_passed %}
 		        <h2>
 		        	<br/>
 		            {{ (result.points / max_points * 100)|round }}% &ndash;
-		            {% if result.points >= max_points * (id.survey_test_percentage / 100) %}
+		            {% if is_passed %}
 		                {_ Passed _}
 		            {% else %}
 		                {_ Failed _}
@@ -56,57 +57,25 @@
 		        	<br/>
 		        	<br/>
 		        </p>
-	        {% endif %}
-	    {% endwith %}
+	        {% endwith %}
+        {% endif %}
 	{% endif %}
 {% endblock %}
 
-
-<table style="width: 100%; border-collapse: collapse; border-spacing: 0; margin-bottom: 18px;">
-	<tr>
-		<th style="padding: 8px; line-height: 18px; text-align: left; vertical-align: top; border-top: 1px solid #dddddd; max-width:45%;">{_ Question _}</th>
-		<th style="padding: 8px; line-height: 18px; text-align: left; vertical-align: top; border-top: 1px solid #dddddd;">{_ Answer _}</th>
-	</tr>
-	{% if result %}
-		{% for blk in id.blocks %}
-		    {% if blk.is_hide_result %}
-		        {# Nothing #}
-		    {% elseif blk.type == 'header' %}
-				<tr>
-					<td style="padding: 8px; text-align: left;" colspan="2">
-						<h2 style="margin: 0">{{ blk.header }}</h2>
-					</td>
-				</tr>
-		    {% elseif blk.type|match:"^survey_.*"
-		    	  and blk.type != 'survey_page_break'
-		    	  and blk.name != 'survey_feedback'
-		   	%}
-				<tr style="border-top: 1px solid #ccc">
-					<td valign="top" style="padding: 8px; line-height: 18px; text-align: left; vertical-align: top; border-top: 1px solid #dddddd; max-width:45%;">
-						{% if blk.prompt %}
-							{{ blk.prompt }}
-						{% else %}
-							{{ blk.name|force_escape }}
-						{% endif %}
-					</td>
-					<td>
-					    {% if blk.type == 'survey_narrative' %}
-							{% optional include "blocks/_block_view_"++blk.type++".tpl" blk=blk is_survey_answer_view result=result %}
-					    {% else %}
-					    	{% with answers[blk.name] as ans %}
-	                            {% for ans in ans.answers %}
-	                                {{ ans.text|escape|linebreaksbr }}{% if blk.is_test %}{% if ans.is_correct|is_defined %}{% if ans.is_correct %} <span style="color:green;font-weight:bold">√ {_ Correct _}</span>{% else %} <span style="color:red;font-weight:bold">X {_ Wrong _}</span>{% endif %}{% endif %}{% endif %}{% if not forloop.last %}<br>{% endif %}
-	                            {% endfor %}
-	                        {% endwith %}
-					    {% endif %}
-					</td>
-				</tr>
-			{% endif %}
-		{% endfor %}
-	{% else %}
-		{% for blk in id.blocks %}
-			{% with blk.name as name %}
-			{% with answers[name] as ans %}
+{% if id.survey_show_results /= 3
+	or (
+			id.survey_test_percentage
+		and result
+		and result.points >= id|survey_test_max_points * (id.survey_test_percentage / 100)
+	)
+%}
+	<table style="width: 100%; border-collapse: collapse; border-spacing: 0; margin-bottom: 18px;">
+		<tr>
+			<th style="padding: 8px; line-height: 18px; text-align: left; vertical-align: top; border-top: 1px solid #dddddd; max-width:45%;">{_ Question _}</th>
+			<th style="padding: 8px; line-height: 18px; text-align: left; vertical-align: top; border-top: 1px solid #dddddd;">{_ Answer _}</th>
+		</tr>
+		{% if result %}
+			{% for blk in id.blocks %}
 			    {% if blk.is_hide_result %}
 			        {# Nothing #}
 			    {% elseif blk.type == 'header' %}
@@ -115,30 +84,71 @@
 							<h2 style="margin: 0">{{ blk.header }}</h2>
 						</td>
 					</tr>
-				{% elseif ans %}
+			    {% elseif blk.type|match:"^survey_.*"
+			    	  and blk.type != 'survey_page_break'
+			    	  and blk.type != 'survey_page_options'
+			    	  and blk.type != 'survey_stop'
+			    	  and blk.name != 'survey_feedback'
+			   	%}
 					<tr style="border-top: 1px solid #ccc">
 						<td valign="top" style="padding: 8px; line-height: 18px; text-align: left; vertical-align: top; border-top: 1px solid #dddddd; max-width:45%;">
-							{% if ans.question.prompt %}
-								{{ ans.question.prompt }}
+							{% if blk.prompt %}
+								{{ blk.prompt }}
 							{% else %}
-								{{ name|force_escape }}
+								{{ blk.name|force_escape }}
 							{% endif %}
 						</td>
-						<td valign="top" style="padding: 8px; line-height: 18px; text-align: left; vertical-align: top; border-top: 1px solid #dddddd;">
-							{% if blk.type == 'survey_narrative' %}
-					            {% optional include "blocks/_block_view_survey_narrative.tpl" blk=blk is_survey_answer_view result=answers %}
-				            {% else %}
-	                            {% for ans in ans.answers %}
-	                                {{ ans.text|escape|linebreaksbr }}{% if blk.is_test %}{% if ans.is_correct|is_defined %}{% if ans.is_correct %} <span style="color:green;font-weight:bold">√ {_ Correct _}</span>{% else %} <span style="color:red;font-weight:bold">X {_ Wrong _}</span>{% endif %}{% endif %}{% endif %}{% if not forloop.last %}<br>{% endif %}
-	                            {% endfor %}
-							{% endif %}
+						<td>
+						    {% if blk.type == 'survey_narrative' %}
+								{% optional include "blocks/_block_view_"++blk.type++".tpl" blk=blk is_survey_answer_view result=result %}
+						    {% else %}
+						    	{% with answers[blk.name] as ans %}
+		                            {% for ans in ans.answers %}
+		                                {{ ans.text|linebreaksbr }}{% if blk.is_test %}{% if ans.is_correct|is_defined %}{% if ans.is_correct %} <span style="color:green;font-weight:bold">√ {_ Correct _}</span>{% else %} <span style="color:red;font-weight:bold">X {_ Wrong _}</span>{% endif %}{% endif %}{% endif %}{% if not forloop.last %}<br>{% endif %}
+		                            {% endfor %}
+		                        {% endwith %}
+						    {% endif %}
 						</td>
 					</tr>
 				{% endif %}
-			{% endwith %}
-			{% endwith%}
-		{% endfor %}
-	{% endif %}
-</table>
+			{% endfor %}
+		{% else %}
+			{% for blk in id.blocks %}
+				{% with blk.name as name %}
+				{% with answers[name] as ans %}
+				    {% if blk.is_hide_result %}
+				        {# Nothing #}
+				    {% elseif blk.type == 'header' %}
+						<tr>
+							<td style="padding: 8px; text-align: left;" colspan="2">
+								<h2 style="margin: 0">{{ blk.header }}</h2>
+							</td>
+						</tr>
+					{% elseif ans %}
+						<tr style="border-top: 1px solid #ccc">
+							<td valign="top" style="padding: 8px; line-height: 18px; text-align: left; vertical-align: top; border-top: 1px solid #dddddd; max-width:45%;">
+								{% if ans.question.prompt %}
+									{{ ans.question.prompt }}
+								{% else %}
+									{{ name|force_escape }}
+								{% endif %}
+							</td>
+							<td valign="top" style="padding: 8px; line-height: 18px; text-align: left; vertical-align: top; border-top: 1px solid #dddddd;">
+								{% if blk.type == 'survey_narrative' %}
+						            {% optional include "blocks/_block_view_survey_narrative.tpl" blk=blk is_survey_answer_view result=answers %}
+					            {% else %}
+		                            {% for ans in ans.answers %}
+		                                {{ ans.text|linebreaksbr }}{% if blk.is_test %}{% if ans.is_correct|is_defined %}{% if ans.is_correct %} <span style="color:green;font-weight:bold">√ {_ Correct _}</span>{% else %} <span style="color:red;font-weight:bold">X {_ Wrong _}</span>{% endif %}{% endif %}{% endif %}{% if not forloop.last %}<br>{% endif %}
+		                            {% endfor %}
+								{% endif %}
+							</td>
+						</tr>
+					{% endif %}
+				{% endwith %}
+				{% endwith%}
+			{% endfor %}
+		{% endif %}
+	</table>
+{% endif %}
 
 {% endblock %}

@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'lower' filter, translate to lowercase
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,23 @@
 %% limitations under the License.
 
 -module(filter_lower).
+-moduledoc("
+Translates the value to lower case.
+
+For example:
+
+
+```django
+{{ value|lower }}
+```
+
+When value is “Hello World” then the output is “hello world”.
+
+**Note:** There is partial support for multi-byte unicode characters.
+
+See also
+
+[upper](/id/doc_template_filter_filter_upper)").
 -export([lower/2]).
 
 

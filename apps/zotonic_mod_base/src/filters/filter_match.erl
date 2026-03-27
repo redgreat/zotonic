@@ -1,6 +1,7 @@
 %% @author Maas-Maarten Zeeman <mmzeeman@xs4all.nl>
 %% @copyright 2011-2021 Maas-Maarten Zeeman
 %% @doc 'match' match a value. returns true if the value matches the regular expression.
+%% @end
 
 %% Copyright 2011-2021 Maas-Maarten Zeeman
 %%
@@ -17,6 +18,21 @@
 %% limitations under the License.
 
 -module(filter_match).
+-moduledoc("
+Match a value with a regular expression.
+
+Returns true if the value matches the regular expression. This is handy for checking if a string starts or ends with a
+particular value.
+
+Usage:
+
+
+```django
+{% if value|match:\".*foo$\" %}
+```
+
+Checks if the value ends with “foo”.
+").
 -export([match/3]).
 
 -author('mmzeeman@xs4all.nl').

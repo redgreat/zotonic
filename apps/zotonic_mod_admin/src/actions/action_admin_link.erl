@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009 Marc Worrell
-%% Date: 2009-04-26
-%% @doc Add an edge between two resources
+%% @copyright 2009-2025 Marc Worrell
+%% @doc Add an edge between two resources.
+%% @end
 
-%% Copyright 2009 Marc Worrell
+%% Copyright 2009-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,46 @@
 %% limitations under the License.
 
 -module(action_admin_link).
+-moduledoc("
+Add an [edge](/id/doc_glossary#term-edge) between two [resources](/id/doc_glossary#term-resource). Used in the admin.
+
+The edge is selected with either:
+
+*   the argument `edge_id`
+*   the arguments `subject_id`, `predicate`, `object_id`
+
+For instance:
+
+
+```django
+{% button
+    text=\"Add\"
+    class=\"btn\"
+    action={
+        link
+        subject_id=id
+        predicate=\"contains\"
+        object_id=other_id
+        action={
+            reload
+        }
+    }
+%}
+```
+
+Other arguments:
+
+*   element_id
+*   edge_template
+*   action - actions executed after linking
+
+Todo
+
+Extend documentation
+
+See also
+
+[unlink](/id/doc_template_action_action_unlink)").
 -author("Marc Worrell <marc@worrell.nl").
 
 -include_lib("zotonic_core/include/zotonic.hrl").
@@ -41,12 +81,9 @@ render_action(TriggerId, TargetId, Args, Context) ->
 	{PostbackMsgJS, _PickledPostback} = z_render:make_postback(Postback, click, TriggerId, TargetId, ?MODULE, Context),
 	{PostbackMsgJS, Context}.
 
-
 %% @doc Unlink the edge, on success show an undo message in the element with id "unlink-message"
-%% @spec event(Event, Context1) -> Context2
 event(#postback{message={link, SubjectId, Predicate, ObjectId, ElementId, EdgeTemplate, Actions}}, Context) ->
     do_link(SubjectId, Predicate, ObjectId, ElementId, EdgeTemplate, Actions, Context).
-
 
 do_link(SubjectId, Predicate, ObjectId, EdgeTemplate, Context) ->
     do_link(SubjectId, Predicate, ObjectId, undefined, EdgeTemplate, [], Context).
@@ -76,9 +113,7 @@ do_link(SubjectId, Predicate, ObjectId, ElementId, EdgeTemplate, Actions, Contex
                                          end,
                             z_render:insert_bottom(ElementId1, Html, Context)
                     end,
-                    Title = m_rsc:p(ObjectId, title, Context),
-                    z_render:wire([{growl, [{text, [?__("Added the connection to", Context), <<" \"">>, Title, <<"\".">>]}]}
-                                            | Actions], Context1);
+                    z_render:wire(Actions, Context1);
                 _ ->
                     z_render:growl_error(?__("This connection already exists.", Context), Context)
             end;

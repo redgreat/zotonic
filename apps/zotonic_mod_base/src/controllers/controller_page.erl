@@ -20,6 +20,71 @@
 %% limitations under the License.
 
 -module(controller_page).
+-moduledoc("
+Show a rsc as a HTML page.
+
+This controller is used to show the HTML page of a [resource](/id/doc_glossary#term-resource). A “404 Not Found” or
+“410 Gone” page is shown if the requested page never existed or has been deleted.
+
+The user will be redirected to the `logon` URL when the current user is not allowed to view the page.
+
+This controller also adds a `noindex` response header when the page’s [seo_noindex](/id/doc_module_mod_seo) flag is set.
+
+Example dispatch rule:
+
+
+```erlang
+{page, [\"page\", id], controller_page, []}
+```
+
+
+
+Dispatch arguments
+------------------
+
+`controller_page` recognizes the following arguments inside the dispatch pattern:
+
+| Argument | Description                                                                      | Example URL |
+| -------- | -------------------------------------------------------------------------------- | ----------- |
+| id       | The id of the page (rsc) to be shown. This can be the numerical id or the unique name of a page. | /page/12345 |
+
+
+
+Dispatch options
+----------------
+
+The following options can be given to the dispatch rule:
+
+| Option         | Description                                                                      | Example                                                             |
+| -------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| id             | Id or unique name of the resource to be shown. This overrules any id in the query arguments. Use `user_id` for the id of the current user. | \\\\{id, page\\\\_about\\\\}                                              |
+| template       | Name of the template to be rendered. Defaults to “page.tpl” Can also be a tuple of the following form: \\\\{cat, Name\\\\}. See also: [catinclude](/id/doc_template_tag_tag_catinclude). | \\\\{template, “about.tpl”\\\\}  \\\\{template, \\\\{cat, “home. tpl”\\\\}\\\\} |
+| cat            | The category the resource that is requested has to be. If a page of a different category is requested, a 404 is shown. | \\\\{cat, text\\\\}                                                     |
+| acl\\\\_action   | What ACL action will be checked. Defaults to ‘view’; but can also be ‘edit’ if users need edit permission on the rsc to be able to access the resource. | \\\\{acl\\\\_action, edit\\\\}                                            |
+| acl            | Extra authorization checks to be performed.                                      | See [ACL options](#acl-options).                                    |
+| is\\\\_canonical | Whether this URL should be considered the caninical URL of the page. If so, the controller will redirect to the rsc’s page path if set. Defaults to true. | \\\\{is\\\\_canonical, false\\\\}                                         |
+| seo\\\\_noindex  | Ask crawlers to not index this page.                                             | seo\\\\_noindex                                                       |
+| nocache        | Prevent browser caching this page.                                               | nocache                                                             |
+
+
+
+ACL options
+-----------
+
+[Authorization](/id/doc_developerguide_access_control#guide-authorization) checks to perform, in addition to the `acl_action` dispatch option, can be given in the `acl` dispatch option, and accepts the following options:
+
+| ACL option             | Description                                                                      | Example                                                                   |
+| ---------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `is_auth`              | Disable anonymous access to this resource.                                       | `{acl, is_auth}`                                                          |
+| `logoff`               | Log out user before processing the request.                                      | `{acl, logoff}`                                                           |
+| `{Action, Resource}`   | Check if user is allowed to perform `Action` on `Resource`. The example is equivalent to the options `{acl_action, edit}, {id, my_named_page}`. | `{acl, {edit, my_named_page}}`                                            |
+| `[{Action, Resource}]` | A list of checks to be performed, as above.                                      | > \\\\{acl, \\\\[ >  \\\\{view, secret\\\\_page\\\\}, >  \\\\{update, 345\\\\} > \\\\]\\\\} |
+| `ignore`               | Don’t perform any access control checks. Be careful to add your own checks in the rendered template and all its included templates. | `{acl, ignore}`                                                           |
+
+See also
+
+[controller_template](/id/doc_controller_controller_template).
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -export([
@@ -71,6 +136,7 @@ resource_exists(Context) ->
         Id = z_controller_helper:get_id(ContextQs),
         case exists(Id, ContextQs) of
             true ->
+                ok = z_context:set_req_metrics( #{ rsc_id => Id }, ContextQs),
                 maybe_redirect(Id, ContextQs);
             false ->
                 {false, ContextQs}
@@ -78,7 +144,7 @@ resource_exists(Context) ->
     catch
         _:Reason:S ->
             ?LOG_ERROR(#{
-                in => zotonc_core,
+                in => zotonic_core,
                 text => <<"Error checking resource_exists">>,
                 result => error,
                 reason => Reason,
@@ -116,18 +182,19 @@ redirect(Location, Context) ->
 process(_Method, _AcceptedCT, _ProvidedCT, Context) ->
     Id = z_controller_helper:get_id(Context),
     CatId = m_rsc:p_no_acl(Id, category_id, Context),
-    IsSeoNoIndex = z_convert:to_bool(m_rsc:p_no_acl(Id, seo_noindex, Context))
-        orelse z_convert:to_bool(m_rsc:p_no_acl(CatId, is_seo_noindex_cat, Context))
+    IsSeoNoIndex = z_convert:to_bool(m_rsc:p_no_acl(Id, <<"seo_noindex">>, Context))
+        orelse z_convert:to_bool(m_rsc:p_no_acl(CatId, <<"is_seo_noindex_cat">>, Context))
         orelse z_convert:to_bool(z_context:get(seo_noindex, Context, false)),
     Context0 = z_context:set_noindex_header(IsSeoNoIndex, Context),
     Context1 = z_context:set_resource_headers(Id, Context0),
     IsCollection = m_rsc:is_a(Id, collection, Context),
-    IsHome = m_rsc:p_no_acl(Id, page_path, Context) =:= <<"/">>,
+    ContextNoLang = z_context:set_language('x-default', Context),
+    IsHome = m_rsc:p_no_acl(Id, <<"page_url">>, ContextNoLang) =:= <<"/">>,
     ContentLanguage = if
         IsCollection orelse IsHome ->
             z_context:language(Context1);
         true ->
-            Translations = case m_rsc:p_no_acl(Id, language, Context1) of
+            Translations = case m_rsc:p_no_acl(Id, <<"language">>, Context1) of
                 undefined -> [];
                 Lngs -> Lngs
             end,
@@ -184,7 +251,7 @@ maybe_redirect_website(Website, true, _Id, Context) ->
             % Redirect requested to itself - no further redirects
             {true, Context};
         true ->
-            redirect(false, WebsiteUrl, Context)
+            z_controller_helper:redirect(false, WebsiteUrl, Context)
     end;
 maybe_redirect_website(_Website, _False, Id, Context) ->
     maybe_redirect_canonical(Id, Context).
@@ -198,34 +265,16 @@ maybe_redirect_canonical(Id, Context) ->
             [ReqPath1|_] = binary:split(ReqPath, <<"?">>),
             PageUrl = m_rsc:p(Id, <<"page_url">>, Context),
             if
-                ReqPath == PageUrl ->
+                ReqPath =:= PageUrl ->
                     {true, Context};
-                ReqPath1 == PageUrl ->
+                ReqPath1 =:= PageUrl ->
                     {true, Context};
                 true ->
                     AbsUrl = z_context:abs_url(PageUrl, Context),
                     AbsUrlQs = append_qs(AbsUrl, cowmachine_req:req_qs(Context)),
-                    redirect(true, AbsUrlQs, Context)
+                    z_controller_helper:redirect(true, AbsUrlQs, Context)
             end
     end.
-
-redirect(IsPermanent, Url, Context) ->
-    Context1 = cowmachine_req:set_resp_headers([
-            {<<"location">>, Url},
-            {<<"cache-control">>, <<"no-store, no-cache, must-revalidate, private, post-check=0, pre-check=0">>}
-        ],
-        Context),
-    Context2 = case cowmachine_req:get_resp_header(<<"vary">>, Context1) of
-        undefined ->
-            cowmachine_req:set_resp_header(<<"vary">>, <<"accept-language">>, Context1);
-        _ ->
-            Context1
-    end,
-    Code = case IsPermanent of
-        true -> 308;
-        false -> 307
-    end,
-    {{halt, Code}, Context2}.
 
 %% @doc Return true if the page should only be shown on the canonical url.
 is_canonical(Id, Context) ->

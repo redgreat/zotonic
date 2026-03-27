@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2021 Marc Worrell
 %% @doc Simple controller that just responds with 'pong'. Used for connection tests.
+%% @end
 
 %% Copyright 2021 Marc Worrell
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(controller_ping).
+-moduledoc("
+Simple controller for connection tests, used on the `/test/connection` page.
+
+It always responds with the four character string `pong`. The ususal path is: `/.zotonic/ping`
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 -export([

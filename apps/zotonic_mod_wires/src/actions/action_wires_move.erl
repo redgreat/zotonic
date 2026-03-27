@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc Move an element to another place, appending it to the target.
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,14 @@
 %% limitations under the License.
 
 -module(action_wires_move).
+-moduledoc("
+Move an element to another place, appending it to the target. The element is given by id with the `element` argument, or
+with the `element_sel` argument for a CSS selector.
+
+Todo
+
+Extend documentation
+").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_action/4]).
 

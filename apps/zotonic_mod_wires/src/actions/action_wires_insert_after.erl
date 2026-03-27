@@ -1,7 +1,7 @@
 %% @author Konstantin Nikiforov <marc@worrell.nl>
 %% @copyright 2011 Konstantin Nikiforov
-%% Date: 2011-04-11
 %% @doc Insert the result of a render action after of an HTML element.
+%% @end
 
 %% Copyright 2011 Konstantin Nikiforov
 %%
@@ -18,6 +18,13 @@
 %% limitations under the License.
 
 -module(action_wires_insert_after).
+-moduledoc("
+Insert the result of a render action after of an HTML element.
+
+Todo
+
+Extend documentation
+").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([
     render_action/4

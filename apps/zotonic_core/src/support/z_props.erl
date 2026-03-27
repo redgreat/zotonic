@@ -1,10 +1,10 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2020 Marc Worrell
-%%
+%% @copyright 2020-2026 Marc Worrell
 %% @doc Query string processing, property lists and property maps for
 %% Zotonic resources.
+%% @end
 
-%% Copyright 2020 Marc Worrell
+%% Copyright 2020-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -33,7 +33,9 @@
     extract_languages/1,
     prune_languages/2,
 
-    normalize_dates/3
+    normalize_dates/3,
+    common_properties/0,
+    property_name_type_hint/1
     ]).
 
 %% Query String key, value and property types.
@@ -41,11 +43,25 @@
 -type qs_key() :: binary().
 -type qs_value() :: binary() | #upload{} | term().
 -type qs_prop() :: { qs_key(), qs_value() }.
+-type type_hint_t() :: id
+                     | binary
+                     | text
+                     | html
+                     | int
+                     | datetime
+                     | list
+                     | language
+                     | float
+                     | bool
+                     | uri
+                     | email
+                     | unsafe.
 
 -export_type([
     qs_key/0,
     qs_value/0,
-    qs_prop/0
+    qs_prop/0,
+    type_hint_t/0
     ]).
 
 %% We use -4700 as the most prehistoric date, as postgresql can't handle
@@ -100,11 +116,197 @@ to_binary(K) when is_atom(K) -> atom_to_binary(K, utf8);
 to_binary(K) when is_binary(K) -> K;
 to_binary(K) -> K.
 
+%% @doc Common resource properties used by exporter and backup routines.
+-spec common_properties() -> [binary()].
+common_properties() ->
+    [
+        <<"title">>,
+
+        <<"category_id">>,
+        <<"creator_id">>,
+        <<"modifier_id">>,
+
+        <<"created">>,
+        <<"modified">>,
+
+        <<"publication_start">>,
+        <<"publication_end">>,
+
+        <<"is_published">>,
+        <<"is_featured">>,
+        <<"is_protected">>,
+
+        <<"chapeau">>,
+        <<"subtitle">>,
+        <<"short_title">>,
+        <<"summary">>,
+
+        <<"name_prefix">>,
+        <<"name_first">>,
+        <<"name_surname_prefix">>,
+        <<"name_surname">>,
+
+        <<"phone">>,
+        <<"phone_mobile">>,
+        <<"phone_alt">>,
+        <<"phone_emergency">>,
+
+        <<"email">>,
+        <<"website">>,
+
+        <<"date_start">>,
+        <<"date_end">>,
+        <<"date_remarks">>,
+
+        <<"address_street_1">>,
+        <<"address_street_2">>,
+        <<"address_city">>,
+        <<"address_state">>,
+        <<"address_postcode">>,
+        <<"address_country">>,
+
+        <<"mail_email">>,
+        <<"mail_street_1">>,
+        <<"mail_street_2">>,
+        <<"mail_city">>,
+        <<"mail_state">>,
+        <<"mail_postcode">>,
+        <<"mail_country">>,
+
+        <<"billing_email">>,
+        <<"billing_street_1">>,
+        <<"billing_street_2">>,
+        <<"billing_city">>,
+        <<"billing_state">>,
+        <<"billing_postcode">>,
+        <<"billing_country">>,
+
+        <<"location_lng">>,
+        <<"location_lat">>,
+
+        <<"body">>,
+        <<"body_extra">>,
+        <<"blocks">>,
+
+        <<"page_path">>,
+        <<"name">>,
+
+        <<"seo_noindex">>,
+        <<"title_slug">>,
+        <<"custom_slug">>,
+        <<"seo_desc">>
+    ].
+
+%% @doc Return a type-hint atom derived from a property name.
+-spec property_name_type_hint(Key) -> type_hint_t() | undefined when
+        Key :: binary().
+property_name_type_hint(Key)
+    when Key =:= <<"id">>;
+         Key =:= <<"creator_id">>;
+         Key =:= <<"modifier_id">>;
+         Key =:= <<"rsc_id">>;
+         Key =:= <<"rsc_id2">> ->
+    id;
+property_name_type_hint(Key)
+    when Key =:= <<"name">>;
+         Key =:= <<"type">>;
+         Key =:= <<"tz">> ->
+    binary;
+property_name_type_hint(Key)
+    when Key =:= <<"version">>;
+         Key =:= <<"visible_for">>;
+         Key =:= <<"privacy">> ->
+    int;
+property_name_type_hint(Key)
+    when Key =:= <<"created">>;
+         Key =:= <<"modified">>;
+         Key =:= <<"date_start">>;
+         Key =:= <<"date_end">>;
+         Key =:= <<"org_pubdate">>;
+         Key =:= <<"publication_start">>;
+         Key =:= <<"publication_end">> ->
+    datetime;
+property_name_type_hint(Key)
+    when Key =:= <<"language">>;
+         Key =:= <<"blocks">>;
+         Key =:= <<"is_a">> ->
+    list;
+property_name_type_hint(Key)
+    when Key =:= <<"pref_language">>;
+         Key =:= <<"medium_language">> ->
+    language;
+property_name_type_hint(Key)
+    when Key =:= <<"location_lat">>;
+         Key =:= <<"location_lng">> ->
+    float;
+property_name_type_hint(<<"is_", _/binary>>) ->
+    bool;
+property_name_type_hint(<<"date_is_", _/binary>>) ->
+    bool;
+property_name_type_hint(Key)
+    when Key =:= <<"seo_noindex">> ->
+    bool;
+property_name_type_hint(Key)
+    when Key =:= <<"@id">>;
+         Key =:= <<"website">> ->
+    uri;
+property_name_type_hint(Key)
+    when Key =:= <<"email">> ->
+    email;
+property_name_type_hint(Key)
+    when Key =:= <<"body">>;
+         Key =:= <<"body_extra">> ->
+    html;
+property_name_type_hint(Key)
+    when Key =:= <<"date_remarks">>;
+         Key =:= <<"chapeau">>;
+         Key =:= <<"title">>;
+         Key =:= <<"short_title">>;
+         Key =:= <<"subtitle">>;
+         Key =:= <<"summary">> ->
+    text;
+property_name_type_hint(Key) ->
+    case extract_type(Key, <<>>) of
+        <<"int">> -> int;
+        <<"url">> -> uri;
+        <<"uri">> -> uri;
+        <<"email">> -> email;
+        <<"html">> -> html;
+        <<"list">> -> list;
+        <<"id">> -> id;
+        <<"date">> -> datetime;
+        <<"unsafe">> -> unsafe;
+        _ -> property_name_type_hint_1(Key)
+    end.
+
+property_name_type_hint_1(<<"email_", _/binary>>) ->
+    email;
+property_name_type_hint_1(<<"date_", _/binary>>) ->
+    datetime;
+property_name_type_hint_1(<<"address_", _/binary>>) ->
+    binary;
+property_name_type_hint_1(<<"mail_", _/binary>>) ->
+    binary;
+property_name_type_hint_1(<<"billing_", _/binary>>) ->
+    binary;
+property_name_type_hint_1(_) ->
+    undefined.
+
+extract_type(<<>>, Type) ->
+    Type;
+extract_type(<<"_", R/binary>>, _Type) ->
+    extract_type(R, <<>>);
+extract_type(<<C/utf8, R/binary>>, Type) ->
+    extract_type(R, <<Type/binary, C/utf8>>).
+
+
 from_prop_value(K, undefined) ->
     {K, undefined};
 from_prop_value(K, V) when is_boolean(V) ->
     {K, V};
 from_prop_value(<<"is_", _/binary>> = K, V) ->
+    {K, z_convert:to_bool(V)};
+from_prop_value(<<"date_is_", _/binary>> = K, V) ->
     {K, z_convert:to_bool(V)};
 from_prop_value(K, V) when is_atom(V) ->
     {K, atom_to_binary(V, utf8)};
@@ -179,18 +381,8 @@ from_qs(Qs, Now) ->
     Nested = nested(Qs),
     WithDates = combine_dates(Nested, Now),
     WithTrans = combine_trans(WithDates),
-    {ok, WithTrans}.
-
-% -spec local_now(z:context()) -> calendar:datetime().
-% local_now(Context) ->
-%     z_datetime:to_local(erlang:universaltime(), Context).
-
-% is_date_prop({<<"date_remarks", _/binary>>, _}) -> false;
-% is_date_prop({<<"date_", _/binary>>, _}) -> true;
-% is_date_prop({<<"publication_start">>, _}) -> true;
-% is_date_prop({<<"publication_end">>, _}) -> true;
-% is_date_prop({<<"org_pubdate">>, _}) -> true;
-% is_date_prop(_) -> false.
+    WithoutSingles = lift_singles(WithTrans),
+    {ok, WithoutSingles}.
 
 
 %% ---------------------------------------------------------------------------------------
@@ -240,9 +432,8 @@ nested_assign([ <<"block-", Rest/binary>> ], V, Map) ->
         [ K ] -> nested_assign([ <<"blocks[].", K/binary>> ], V, Map)
     end;
 nested_assign([ K, <<>> ], _V, Map) ->
-    % Start a new map, if key ends in "[]"
     % This was a key 'a.b[].' which notifies the
-    % start of a new map.
+    % start of a new map in a list 'b'
     case has_suffix(K, <<"[]">>) of
         true ->
             Len = size(K) - size(<<"[]">>),
@@ -257,41 +448,155 @@ nested_assign([ K, <<>> ], _V, Map) ->
             Map
     end;
 nested_assign([ K ], V, Map) ->
-    case has_suffix(K, <<"[]">>) of
-        true ->
-            % This was a key 'a.b[]' which appends a
-            % value to a list.
-            Len = size(K) - size(<<"[]">>),
-            <<K1:Len/binary, "[]">> = K,
-            case maps:get(K1, Map, []) of
-                L when is_list(L) ->
-                    Map#{ K1 => [ V | L ] };
-                _ ->
-                    Map#{ K1 => [ V ] }
+    case binary:split(K, <<"[">>) of
+        [Key, KIdxPost] ->
+            case binary:split(KIdxPost, <<"]">>) of
+                [<<>>, <<>>] ->
+                    % This was a key 'a.b[]' which appends a value to a list.
+                    case maps:find(Key, Map) of
+                        {ok, L} when is_list(L) ->
+                            Map#{ Key => [ V | L ] };
+                        {ok, _} ->
+                            Map#{ Key => [ V ] };
+                        error ->
+                            Map#{ Key => [ V ] }
+                    end;
+                [Index, <<>>] ->
+                    % This was a key a.b[123] which sets a value on a
+                    % specific index value in a list; or a.b[]$en which
+                    % appends a value to the list.
+                    IndexNr = try
+                                    max(1, binary_to_integer(Index))
+                              catch _:_ ->
+                                    append
+                              end,
+                    MaybeList = maps:get(Key, Map, []),
+                    List = case is_list(MaybeList) of
+                        true -> MaybeList;
+                        false -> []
+                    end,
+                    List1 = lists:reverse(List),
+                    M = get_index(IndexNr, List1),
+                    V1 = if
+                        is_map(M) -> M#{ <<>> => V };
+                        true -> #{ <<>> => V }
+                    end,
+                    List2 = set_index(IndexNr, V1, List1, []),
+                    Map#{ Key => List2 };
+                [<<>>, Post] ->
+                    % This was a key a.b[]$en which appends a new value if
+                    % the post key was not known yet, otherwise it will set
+                    % the post key on the current value.
+                    MaybeList = maps:get(Key, Map, []),
+                    List = case is_list(MaybeList) of
+                        true -> MaybeList;
+                        false -> []
+                    end,
+                    case List of
+                        [ #{ Post := _ } | _ ] ->
+                            Map#{ Key => [ #{ Post => V } | List ]};
+                        [ M | L ] when is_map(M) ->
+                            Map#{ Key => [ M#{ Post => V } | L ]};
+                        _ ->
+                            Map#{ Key => [ #{ Post => V } | List ]}
+                    end;
+                [Index, Post] ->
+                    % This was a key a.b[123]$en which set the value if
+                    % the post key was not known yet, otherwise appends
+                    % a value to the list.
+                    IndexNr = try
+                                    max(1, binary_to_integer(Index))
+                              catch _:_ ->
+                                    append
+                              end,
+                    MaybeList = maps:get(Key, Map, []),
+                    List = case is_list(MaybeList) of
+                        true -> MaybeList;
+                        false -> []
+                    end,
+                    List1 = lists:reverse(List),
+                    M = get_index(IndexNr, List1),
+                    V1 = if
+                        is_map(M) -> M#{ Post => V };
+                        true -> #{ Post => V }
+                    end,
+                    List2 = set_index(IndexNr, V1, List1, []),
+                    Map#{ Key => List2 }
             end;
-        false ->
+        _ ->
             Map#{ K => V }
     end;
 nested_assign([ K | Ks ], V, Map) ->
-    case has_suffix(K, <<"[]">>) of
-        true ->
-            % This was a key 'a.b[].d' which sets a
-            % value in a list of maps.
-            Len = size(K) - size(<<"[]">>),
-            <<K1:Len/binary, "[]">> = K,
-            case maps:find(K1, Map) of
-                {ok, [ M | L ]} ->
-                    M1 = nested_assign(Ks, V, M),
-                    Map#{ K1 => [ M1 | L ]};
-                _ ->
-                    M1 = nested_assign(Ks, V, #{}),
-                    Map#{ K1 => [ M1 ]}
+    case binary:split(K, <<"[">>) of
+        [Key, KIdxPost] ->
+            case binary:split(KIdxPost, <<"]">>) of
+                [<<>>, <<>>] ->
+                    % This was a key 'a.b[].d' which sets a key in the last
+                    % map in a list 'b'.
+                    case maps:find(Key, Map) of
+                        {ok, [ M | L ]} when is_map(M) ->
+                            M1 = nested_assign(Ks, V, M),
+                            Map#{ Key => [ M1 | L ]};
+                        {ok, L} when is_list(L) ->
+                            M1 = nested_assign(Ks, V, #{}),
+                            Map#{ Key => [ M1 | L ]};
+                        {ok, _}  ->
+                            M1 = nested_assign(Ks, V, #{}),
+                            Map#{ Key => [ M1 ]};
+                        error ->
+                            M1 = nested_assign(Ks, V, #{}),
+                            Map#{ Key => [ M1 ]}
+                    end;
+                [Index, _Post] ->
+                    % This was key a.b[123].d which sets a value on a specific
+                    % index value in a list.
+                    % Any special post value like the '$en' in a.b[123]$en.d'
+                    % is ignored, as the are only allowed after the final key.
+                    IndexNr = try
+                                    max(1, binary_to_integer(Index))
+                              catch _:_ ->
+                                    append
+                              end,
+                    MaybeList = maps:get(Key, Map, []),
+                    List = case is_list(MaybeList) of
+                        true -> MaybeList;
+                        false -> []
+                    end,
+                    List1 = lists:reverse(List),
+                    M = get_index(IndexNr, List1),
+                    M1 = if
+                        is_map(M) -> M;
+                        true -> #{}
+                    end,
+                    V1 = nested_assign(Ks, V, M1),
+                    List2 = set_index(IndexNr, V1, List1, []),
+                    Map#{ Key => List2 }
             end;
-        false ->
+        _ when Ks =:= [] ->
+            Map#{ K => V };
+        _ when Ks =/= [] ->
             Sub = maps:get(K, Map, #{}),
             Sub1 = nested_assign(Ks, V, Sub),
             Map#{ K => Sub1 }
     end.
+
+set_index(append, V, [], Acc) ->
+    [V|Acc];
+set_index(append, V, [VL|L], Acc) ->
+    set_index(append, V, L, [VL|Acc]);
+set_index(1, V, [], Acc) ->
+    [V|Acc];
+set_index(1, V, [_|L], Acc) ->
+    lists:reverse(L, [V|Acc]);
+set_index(N, V, [VL|L], Acc) when N > 1 ->
+    set_index(N-1, V, L, [VL|Acc]);
+set_index(N, V, [], Acc) when N > 1 ->
+    set_index(N-1, V, [], [undefined|Acc]).
+
+get_index(append, _L) -> #{};
+get_index(1, [V|_]) -> V;
+get_index(N, [_|L]) when N > 0 -> get_index(N-1, L);
+get_index(_, [])-> #{}.
 
 %% ---------------------------------------------------------------------------------------
 %% Language handling
@@ -386,6 +691,15 @@ add_trans(Name, Code, V, Acc) ->
     #trans{ tr = Tr } = maps:get(Name, Acc, #trans{}),
     Tr1 = [ {Code, z_string:trim(V)} | proplists:delete(Code, Tr) ],
     Acc#{ Name => #trans{ tr = Tr1 } }.
+
+lift_singles(#{ <<>> := V } = M) when map_size(M) =:= 1 ->
+    lift_singles(V);
+lift_singles(M) when is_map(M) ->
+    maps:map(fun(_K, V) -> lift_singles(V) end, M);
+lift_singles(L) when is_list(L) ->
+    lists:map(fun lift_singles/1, L);
+lift_singles(V) ->
+    V.
 
 %% ---------------------------------------------------------------------------------------
 %% Date handling
@@ -810,7 +1124,7 @@ is_date_value(_) ->
     false.
 
 is_date_key(<<"is_", _/binary>>) -> false;
-is_date_key(<<"date_is_all_day">>) -> false;
+is_date_key(<<"date_is_", _/binary>>) -> false;
 is_date_key(<<"date_remarks">>) -> false;
 is_date_key(<<"date_", _/binary>>) -> true;
 is_date_key(<<"org_pubdate">>) -> true;
@@ -822,4 +1136,3 @@ is_date_key(K) when is_binary(K) ->
         _ -> false
     end;
 is_date_key(_) -> false.
-

@@ -2,6 +2,7 @@
 %% @copyright 2021 Marc Worrell
 %%
 %% @doc Support for admin tasks around non authoritative resources.
+%% @end
 
 %% Copyright 2021 Marc Worrell
 %%
@@ -28,7 +29,11 @@
 event(#postback{ message={import_refresh, Args} }, Context) ->
     OnError = proplists:get_value(on_error, Args),
     {id, Id} = proplists:lookup(id, Args),
-    case m_rsc_import:reimport_recursive_async(Id, Context) of
+    Options = [
+        {is_forced_update, true},
+        {is_no_medium_download, false}
+    ],
+    case m_rsc_import:reimport_recursive_async(Id, Options, Context) of
         {ok, {_Id, _ObjectIds}} ->
             case proplists:get_all_values(on_success, Args) of
                 [] ->

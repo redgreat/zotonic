@@ -19,6 +19,67 @@
 %% limitations under the License.
 
 -module(mod_custom_redirect).
+-moduledoc("
+Enables redirects from unknown hosts and paths to other locations. The other location can be a known path or another web site.
+
+
+
+Redirect unknown domains
+------------------------
+
+If the site dispatcher encounters an unknown host name then it notifies all modules with the `#dispatch_host` notification.
+
+The Custom Redirect module observes this notification and checks against a configurable list of domains and redirects.
+If a domain is matched then the site dispatcher will redirect the user agent to the new location.
+
+The list of domains and their redirects can be configured in the admin: Modules -> Domains and redirects.
+
+The domain must be like what is typed in the browser. Examples of domains are `www.example.org` and `mypc.local:8000`.
+
+Domain names are case insensitive, that is `WWW.EXAMPLE.COM` and `WwW.Example.coM` will both be matched with
+`www.example.com`. Contrary to the domain name, the path is case sensitive. That is `/ABOUT` and `/About` are two
+different paths and will need their own redirect rules!
+
+The redirect location can be a complete URL (for example `http://www.example.com/foo/bar.html`) or a path (for example `/about`).
+
+
+
+Redirect unknown paths
+----------------------
+
+After the site has been selected, the dispatcher matches the path to the dispatch rules.
+
+When no dispatch rule matches, then the `#dispatch` notification is sent. The [mod_base](/id/doc_module_mod_base)
+module observes that notification to check the path against the page_path properties of all resources. If
+[mod_base](/id/doc_module_mod_base) didn’t find match then [mod_custom_redirect](#mod-custom-redirect) will
+check all custom redirect with an empty domain and a matching path. The visitor will be redirected to the corresponding
+redirect location.
+
+
+
+Permanent or temporary redirects
+--------------------------------
+
+A redirection can be permanent or temporary. A permanent redirect will be remembered by the visiting browser (and search
+engines), replacing any occurence of the redirected location. A temporary redirect will not be remembered and be retried
+on every visit.
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_admin_menu`: Add custom redirect management to the admin menu when permitted.
+- `observe_dispatch`: Called when the path didn't match any dispatch rule using `m_custom_redirect:get_dispatch`.
+- `observe_dispatch_host`: Called when the host didn't match any site config using `m_custom_redirect:list_dispatch_host`.
+
+Delegate callbacks:
+
+- `event/2` with `submit` messages: `custom_redirects`.
+
+See also
+
+[Dispatch rules](/id/doc_developerguide_dispatch_rules), [mod_base](/id/doc_module_mod_base)").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Custom Redirects").

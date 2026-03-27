@@ -1,4 +1,5 @@
 %% @doc Extend the filehandler with mappers for translations, templates and mediaclass.
+%% @end
 
 %% Copyright 2017 Marc Worrell
 %%
@@ -37,7 +38,7 @@
 
 -include_lib("zotonic_notifier/include/zotonic_notifier.hrl").
 
--spec start_observers() -> ok.
+-spec start_observers() -> ok | {error, term()}.
 start_observers() ->
     zotonic_notifier:observe(
         ?SYSTEM_NOTIFIER, zotonic_filehandler_mappers,

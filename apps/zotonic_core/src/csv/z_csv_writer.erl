@@ -1,5 +1,6 @@
 %% @doc Write data to a CSV file
 %% @author Marc Worrell <marc@worrell.nl>
+%% @end
 
 %% Copyright 2013-2019 Marc Worrell
 %%
@@ -34,11 +35,11 @@ sanitize(InFile, OutFile) ->
     ok = z_csv_writer:write_file(OutFile, Lines, Sep).
 
 
--spec write_file( file:filename_all(), z_csv_parser:lines() ) -> ok | {error, term()}.
+-spec write_file( file:filename_all(), z_csv_parser:lines() ) -> ok | {error, atom()}.
 write_file(Filename, Data) ->
     write_file(Filename, Data, $,).
 
--spec write_file( file:filename_all(), z_csv_parser:lines(), z_csv_parser:sep() ) -> ok | {error, term()}.
+-spec write_file( file:filename_all(), z_csv_parser:lines(), z_csv_parser:sep() ) -> ok | {error, atom()}.
 write_file(Filename, Data, Sep) when is_list(Data) ->
     case file:open(Filename, [write, binary]) of
         {ok, Device} ->

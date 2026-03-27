@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'center' filter, center a string inside a certain amount of characters
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,23 @@
 %% limitations under the License.
 
 -module(filter_center).
+-moduledoc("
+Centers the value in a field of a certain width using spaces.
+
+For example:
+
+
+```django
+{{ value|center:7 }}
+```
+
+When value is `hello` then the output is `_hello_` (with spaces).
+
+Centering only works for single byte character values. At this moment there is no support for multi-byte unicode characters.
+
+See also
+
+[rjust](/id/doc_template_filter_filter_rjust), [ljust](/id/doc_template_filter_filter_ljust)").
 -export([center/3]).
 
 center(undefined, _Number, _Context) ->

@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'if' filter, depending on input select first or second argument
+%% @end
 
 %% Copyright 2011 Marc Worrell
 %%
@@ -17,6 +18,47 @@
 %% limitations under the License.
 
 -module(filter_if).
+-moduledoc("
+Selects an argument depending on a condition.
+
+For example:
+
+
+```django
+{{ value|if:\"yes\":\"no\" }}
+```
+
+This is a shortcut for using the [if](/id/doc_template_tag_tag_if) tag. The same can be expressed as follows:
+
+
+```django
+{% if value %}yes{% else %}no{% endif %}
+```
+
+Note that falsy values (0, `false`, `undefined` or empty string) evaluate to false.
+
+
+
+Elaborate examples
+------------------
+
+
+```django
+{% with is_i18n|if:r.translation[lang_code].body:r.body as body %}
+```
+
+So if `is_i18n` evaluates to true, `body` is assigned to `r.translation[lang_code].body`, else to `r.body`.
+
+
+```django
+{% include \"_language_attrs.tpl\" id=pid class=(pid==id)|if:\"active\":\"\" %}
+```
+
+Add parameter `class` to the included template; when `pid` equals `id`, `class` is `\"active\"`, otherwise an empty string.
+
+See also
+
+[if](/id/doc_template_tag_tag_if), [if_undefined](/id/doc_template_filter_filter_if_undefined)").
 -export(['if'/4]).
 
 

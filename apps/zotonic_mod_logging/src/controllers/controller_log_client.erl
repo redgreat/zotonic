@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2019 Marc Worrell <marc@worrell.nl>
 %% @doc Log client side events
+%% @end
 
 %% Copyright 2019 Marc Worrell
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(controller_log_client).
+-moduledoc("
+Todo
+
+Not yet documented.
+").
 
 -author("Marc Worrell <marc@worrell.nl>").
 

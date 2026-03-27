@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'before' filter, return the element before another element in a list
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,18 @@
 %% limitations under the License.
 
 -module(filter_before).
+-moduledoc("
+Return the first element before another element in a list. For example:
+
+
+```django
+{{ [1,2,3]|before:2 }}
+```
+
+Evaluates to the value `1`.
+
+When the element is not part of the list, or is the first element in the list, the returned value is `undefined`.
+").
 -export([before/3]).
 
 

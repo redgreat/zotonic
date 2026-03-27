@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2024 Marc Worrell, Maas-Maarten Zeeman
+%% @copyright 2009-2026 Marc Worrell, Maas-Maarten Zeeman
 %% @doc Pivoting server for the rsc table. Takes care of full text indices. Polls the pivot queue for any changed resources.
 %% @end
 
-%% Copyright 2009-2024 Marc Worrell, Maas-Maarten Zeeman
+%% Copyright 2009-2026 Marc Worrell, Maas-Maarten Zeeman
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -97,11 +97,12 @@
 
 -record(state, {
     site :: atom(),
+    is_env_backup = false :: boolean(),
     is_initial_delay = true :: boolean(),
     is_pivot_delay = false :: boolean(),
     backoff_counter = 0 :: integer(),
 
-    poll_timer :: timer:tref(),
+    poll_timer :: timer:tref() | undefined,
 
     task_pid :: undefined | pid(),
     task_id :: undefined | integer(),
@@ -120,9 +121,18 @@
 
 
 -type task_key() :: undefined | binary() | string() | atom() | integer().
+-type task_return() :: ok
+                     | {delay, task_delay()}
+                     | {delay, task_delay(), NewArgs :: list()}
+                     | any().
+-type task_delay() :: non_neg_integer()
+                    | calendar:datetime()
+                    | undefined.
 
 -export_type([
-    task_key/0
+    task_key/0,
+    task_return/0,
+    task_delay/0
 ]).
 
 
@@ -176,8 +186,8 @@ queue_all(Context) ->
 
 queue_all_1(ToId, Context) ->
     case z_db:q("
-        insert into rsc_pivot_log (rsc_id)
-        select id
+        insert into rsc_pivot_log (rsc_id, priority, is_update)
+        select id, 2, false
         from rsc
         where id < $1
         order by id desc
@@ -272,9 +282,9 @@ insert_task(Module, Function, UniqueKey, Args, Context) ->
 %% @doc Insert a slow running pivot task with unique key and arguments that should start after Seconds seconds.
 %% Always delete any existing transaction, to prevent race conditions when the task is running
 %% during this insert. The UniqueKey is used to have multiple entries per module/function. If only
-%% a single module/function should be queued, then set the UniqueKey to <tt>&lt;&lt;&gt;&gt;</tt>.
--spec insert_task_after(SecondsOrDate, Module, Function, UniqueKey, Args, Context) -> {ok, TaskId} | {error, term()}
-    when SecondsOrDate::undefined | integer() | calendar:datetime(),
+%% a single module/function should be queued, then set the UniqueKey to ``<<>>''.
+-spec insert_task_after(Delay, Module, Function, UniqueKey, Args, Context) -> {ok, TaskId} | {error, term()}
+    when Delay:: task_delay(),
          Module :: atom(),
          Function :: atom(),
          UniqueKey :: task_key(),
@@ -286,10 +296,10 @@ insert_task(Module, Function, UniqueKey, Args, Context) ->
                     ) -> {ok, {calendar:datetime(), list()}} | {error, term()} ),
          Context :: z:context(),
          TaskId :: integer().
-insert_task_after(SecondsOrDate, Module, Function, UniqueKey, ArgsFun, Context) ->
+insert_task_after(Delay, Module, Function, UniqueKey, ArgsFun, Context) ->
     gen_server:call(
         Context#context.pivot_server,
-        {insert_task_after, SecondsOrDate, Module, Function, UniqueKey, ArgsFun}).
+        {insert_task_after, Delay, Module, Function, UniqueKey, ArgsFun}).
 
 -spec get_task( z:context() ) -> {ok, [ map() ]} | {error, term()}.
 get_task(Context) ->
@@ -339,7 +349,7 @@ to_utc_date({{Y,M,D},{H,I,S}} = Date) when is_integer(Y), is_integer(M), is_inte
 
 -spec delete_task( module(), atom(), z:context() ) -> non_neg_integer().
 delete_task(Module, Function, Context) ->
-    case z_db:q("delete from pivot_task_queue where module = $1 and function = $2",
+    case z_db:q1("delete from pivot_task_queue where module = $1 and function = $2",
            [Module, Function],
            Context)
     of
@@ -354,7 +364,7 @@ delete_task(Module, Function, Context) ->
 -spec delete_task( module(), atom(), task_key(), z:context() ) -> non_neg_integer().
 delete_task(Module, Function, UniqueKey, Context) ->
     UniqueKeyBin = z_convert:to_binary(UniqueKey),
-    case z_db:q("delete from pivot_task_queue where module = $1 and function = $2 and key = $3",
+    case z_db:q1("delete from pivot_task_queue where module = $1 and function = $2 and key = $3",
            [Module, Function, UniqueKeyBin],
            Context)
     of
@@ -381,7 +391,7 @@ count_tasks(Context) ->
 
 -spec delete_tasks( z:context() ) -> non_neg_integer().
 delete_tasks(Context) ->
-    case z_db:q("delete from pivot_task_queue", Context) of
+    case z_db:q1("delete from pivot_task_queue", Context) of
         0 ->
             0;
         N ->
@@ -445,7 +455,7 @@ pg_lang_extra(LangCode) ->
 %%====================================================================
 %% API
 %%====================================================================
-%% @spec start_link(SiteProps) -> {ok,Pid} | ignore | {error,Error}
+-spec start_link(term()) -> {ok, pid()} | ignore | {error, term()}.
 %% @doc Starts the server
 start_link(Site) ->
     Name = z_utils:name_for_site(?MODULE, Site),
@@ -456,7 +466,7 @@ start_link(Site) ->
 %% gen_server callbacks
 %%====================================================================
 
-%% @spec init(Args) -> {ok, State} |
+-spec init(term()) -> {ok, term()} | {ok, term(), timeout() | hibernate} | ignore | {stop, term()}.
 %%                     {ok, State, Timeout} |
 %%                     ignore               |
 %%                     {stop, Reason}
@@ -467,11 +477,18 @@ init(Site) ->
         site => Site,
         module => ?MODULE
     }),
-    timer:send_interval(?JOB_CHECK_INTERVAL*1000, job_check),
-    {ok, TRefPoll} = timer:send_after(?PIVOT_POLL_INTERVAL_SLOW*1000, poll),
+    {IsEnvBackup, PollTimer} = case m_site:environment(Site) of
+        backup ->
+            {true, undefined};
+        _Env ->
+            timer:send_interval(?JOB_CHECK_INTERVAL*1000, job_check),
+            {ok, TRefPoll} = timer:send_after(?PIVOT_POLL_INTERVAL_SLOW*1000, poll),
+            {false, TRefPoll}
+    end,
     {ok, #state{
         site = Site,
-        poll_timer = TRefPoll,
+        is_env_backup = IsEnvBackup,
+        poll_timer = PollTimer,
         is_initial_delay = true,
         is_pivot_delay = false
     }}.
@@ -525,7 +542,8 @@ handle_call({pivot_done, PivotPid, _IdsOrError}, _From, State) ->
         pid => PivotPid
     }),
     {reply, {error, unknown_pivot}, State};
-
+handle_call({insert_task_after, _Secs, _Module, _Func, _Key, _Args}, _From, #state{ is_env_backup = true } = State) ->
+    {reply, {error, backup}, State};
 handle_call({insert_task_after, SecondsOrDate, Module, Function, UniqueKey, ArgsFun}, _From, State) ->
     Context = z_context:new(State#state.site),
     Result = do_insert_task_after(SecondsOrDate, Module, Function, UniqueKey, ArgsFun, Context),
@@ -540,6 +558,7 @@ handle_call({insert_task_after, SecondsOrDate, Module, Function, UniqueKey, Args
 handle_call(status, _From, State) ->
     Status = #{
         site => State#state.site,
+        is_env_backup => State#state.is_env_backup,
         is_initial_delay => State#state.is_initial_delay,
         is_pivot_delay => State#state.is_pivot_delay,
         task_pid => State#state.task_pid,
@@ -558,6 +577,9 @@ handle_call(Message, _From, State) ->
 handle_cast(poll, #state{ is_initial_delay = true } = State) ->
     % Manual poll of the pivot queue, but starting up - wait
     {noreply, State};
+handle_cast(poll, #state{ is_env_backup = true } = State) ->
+    % No pivot or tasks when running as backup.
+    {noreply, State};
 handle_cast(poll, State) ->
     % Manual poll of the pivot queue
     try
@@ -575,12 +597,16 @@ handle_cast(poll, State) ->
             {noreply, State#state{ backoff_counter = ?BACKOFF_POLL_ERROR }}
     end;
 
+handle_cast({insert_queue, _DueDate, _Ids}, #state{ is_env_backup = true } = State) ->
+    {noreply, State};
 handle_cast({insert_queue, DueDate, Ids}, State) when is_list(Ids) ->
     % Insert an id into the queue.
     do_insert_queue(Ids, DueDate, z_context:new(State#state.site)),
     z_utils:flush_message({'$gen_cast', {insert_queue, DueDate, Ids}}),
     {noreply, State};
 
+handle_cast({pivot, _Id}, #state{ is_env_backup = true } = State) ->
+    {noreply, State};
 handle_cast({pivot, Id}, #state{ is_initial_delay = true } = State) when is_integer(Id) ->
     % Immediate pivot of an resource-id - but we are still starting up
     Due = z_datetime:next_minute(calendar:universal_time()),
@@ -643,6 +669,8 @@ handle_cast(Message, State) ->
 
 
 %% @doc Handling all non call/cast messages
+handle_info(poll, #state{ is_env_backup = true } = State) ->
+    {noreply, State};
 handle_info(poll, #state{ is_pivot_delay = true } = State) ->
     State1 = State#state{ is_pivot_delay = false },
     {noreply, next_poll(State1, ?PIVOT_POLL_INTERVAL_SLOW)};
@@ -1056,7 +1084,7 @@ fetch_queue(Context) ->
         select rsc_id
         from rsc_pivot_log
         where due < $2
-        order by is_update, due
+        order by priority, is_update, due
         limit $1",
         [ ?POLL_BATCH, PivotDate ],
         Context),
@@ -1107,87 +1135,124 @@ delete_queue(Ids, DueDate, Context) ->
         [ Ids, DueDate ],
         Context).
 
-
-%% @doc Let a module define a custom pivot
-%% columns() -> [column()]
-%% column()  -> {ColumName::atom(), ColSpec::string()} | {atom(), string(), options::list()}
+%% @doc Let a module define a custom pivot. The custom pivot table is created or
+%% changed to reflect the given columns. Per default an index is created for each
+%% column.
+%% Be careful when adding columns that are not nullable, if the table contains data then
+%% adding those columns will fail.
+-spec define_custom_pivot(Module, Columns, Context) -> ok when
+    Module :: atom(),
+    Columns :: [ Column ],
+    Column :: #column_def{}
+            | {#column_def{}, Options}
+            | {Colname, Colspec}
+            | {Colname, Colspec, Options},
+    Colname :: string() | binary() | atom(),
+    Colspec :: string() | binary(),
+    Options :: [ Option ],
+    Option :: noindex,
+    Context :: z:context().
 define_custom_pivot(Module, Columns, Context) ->
-    TableName = "pivot_" ++ z_convert:to_list(Module),
+    TableName = list_to_atom("pivot_" ++ z_convert:to_list(Module)),
+    ColDefs = to_column_defs(Columns),
     case z_db:table_exists(TableName, Context) of
         true ->
-            % Compare column names to see if table needs an update
-            DbColumns = [ Name || #column_def{name=Name} <- z_db:columns(TableName, Context), not(Name == id)],
-            SpecColumns = lists:map(
-                fun(ColumnDef) ->
-                    [Name|_] = tuple_to_list(ColumnDef),
-                    Name
-                end,
-                Columns
-            ),
-            case lists:usort(SpecColumns) == lists:usort(DbColumns) of
+            DbColumns = z_db:column_names(TableName, Context) -- [ id ],
+            DefColumns = [ Name || {#column_def{ name = Name }, _} <- ColDefs ],
+            case lists:usort(DefColumns) =:= lists:usort(DbColumns) of
                 false ->
-                    z_db:drop_table(TableName, Context),
-                    define_custom_pivot(Module, Columns, Context);
+                    update_custom_pivot(TableName, ColDefs, Context);
                 true ->
                     ok
             end;
         false ->
-            ok = z_db:transaction(
-                    fun(Ctx) ->
-                        Fields = custom_columns(Columns),
-                        Sql = "CREATE TABLE " ++ TableName ++ "(" ++
-                              "id int NOT NULL," ++ Fields ++ " primary key(id))",
+            update_custom_pivot(TableName, ColDefs, Context)
+    end.
 
-                        [] = z_db:q(lists:flatten(Sql), Ctx),
+update_custom_pivot(TableName, DefColumns, Context) ->
+    Cols = [ Col || {Col, _} <- DefColumns ],
+    Cols1 = [
+        #column_def{
+            name = id,
+            type = "integer",
+            primary_key = true,
+            is_nullable = false
+        }
+        | Cols
+    ],
+    ok = z_db:transaction(
+        fun(Ctx) ->
+            ok = z_db:alter_table(TableName, Cols1, Ctx),
+            Constraint = "fk_" ++ z_convert:to_list(TableName) ++ "_id",
+            case z_db:constraint_exists(TableName, Constraint, Ctx) of
+                true ->
+                    ok;
+                false ->
+                    [] = z_db:q("ALTER TABLE " ++ z_convert:to_list(TableName) ++
+                                " ADD CONSTRAINT " ++ Constraint ++
+                                " FOREIGN KEY (id) REFERENCES rsc(id) ON UPDATE CASCADE ON DELETE CASCADE", Ctx)
+            end,
+            lists:foreach(
+                fun({#column_def{ name = ColName }, Opts}) ->
+                    case proplists:get_bool(noindex, Opts) of
+                        true ->
+                            ok;
+                        false ->
+                            Sql = iolist_to_binary([
+                                "CREATE INDEX IF NOT EXISTS ",
+                                z_convert:to_list(TableName), "_", z_convert:to_list(ColName), "_key ON ",
+                                z_convert:to_list(TableName), "(", z_convert:to_list(ColName), ")"
+                            ]),
+                            [] = z_db:q(Sql, Ctx)
+                    end
+                end,
+                DefColumns)
+        end,
+        Context),
+    z_db:flush(Context),
+    ok.
 
-                        [] = z_db:q("ALTER TABLE " ++ TableName ++
-                                    " ADD CONSTRAINT fk_" ++ TableName ++ "_id " ++
-                                    " FOREIGN KEY (id) REFERENCES rsc(id) ON UPDATE CASCADE ON DELETE CASCADE", Ctx),
+to_column_defs(List) ->
+    lists:map(
+        fun
+            (#column_def{} = Def) -> {Def, []};
+            ({#column_def{}, _Opts} = Def) -> Def;
+            ({Name, Spec}) -> {to_column_def(Name, Spec), []};
+            ({Name, Spec, Opts}) -> {to_column_def(Name, Spec), Opts}
+        end,
+        List).
 
-                        Indexable = lists:filter(fun({_,_}) -> true;
-                                                    ({_,_,Opts}) -> not lists:member(noindex, Opts)
-                                                 end,
-                                                 Columns),
-                        Idx = [
-                                begin
-                                    K = element(1,Col),
-                                    "CREATE INDEX " ++ TableName ++ "_" ++ z_convert:to_list(K) ++ "_key ON "
-                                    ++ TableName ++ "(" ++ z_convert:to_list(K) ++ ")"
-                                end
-                                || Col <- Indexable
-                            ],
-                        lists:foreach(
-                            fun(Sql1) ->
-                                [] = z_db:q(Sql1, Ctx)
-                            end,
-                            Idx),
-                        ok
-                    end,
-                    Context),
-            z_db:flush(Context),
-            ok
+to_column_def(Name, Spec) ->
+    C = #column_def{ name = z_convert:to_atom(Name), type = <<>> },
+    {C1, SpecRest} = case binary:split(z_convert:to_binary(Spec), <<"(">>) of
+        [Type, LenRest] ->
+            [Len, Rest] = binary:split(LenRest, <<")">>),
+            Len1 = binary_to_integer(z_string:trim(Len)),
+            {C#column_def{ length = Len1 }, <<Type/binary, " ", Rest/binary>>};
+        [Rest] ->
+            {C, Rest}
+    end,
+    case binary:split(z_string:to_lower(SpecRest), <<"not null">>) of
+        [Type1, NullRest] ->
+            case binary:split(NullRest, <<"default ">>) of
+                [_, Default] ->
+                    C1#column_def{ type = z_string:trim(Type1), is_nullable = false, default = z_string:trim(Default) };
+                [_] ->
+                    C1#column_def{ type = z_string:trim(Type1), is_nullable = false }
+            end;
+        [NullRest] ->
+            case binary:split(NullRest, <<"default ">>) of
+                [Type1, Default] ->
+                    C1#column_def{ type = z_string:trim(Type1), default = z_string:trim(Default) };
+                [Type1] ->
+                    C1#column_def{ type = z_string:trim(Type1) }
+            end
     end.
 
 
-custom_columns(Cols) ->
-    custom_columns(Cols, []).
-
-custom_columns([], Acc) ->
-    lists:reverse(Acc);
-custom_columns([{Name, Spec}|Rest], Acc) ->
-    custom_columns(Rest, [ [z_convert:to_list(Name), " ", Spec, ","] |  Acc]);
-custom_columns([{Name, Spec, _Opts}|Rest], Acc) ->
-    custom_columns(Rest, [ [z_convert:to_list(Name), " ", Spec, ","] |  Acc]).
-
-
-
 %% @doc Lookup a custom pivot; give back the Id based on a column. Will always return the first Id found.
-%% @spec lookup_custom_pivot(Module, Column, Value, Context) -> Id | undefined
 lookup_custom_pivot(Module, Column, Value, Context) ->
     TableName = "pivot_" ++ z_convert:to_list(Module),
     Column1 = z_convert:to_list(Column),
     Query = "SELECT id FROM " ++ TableName ++ " WHERE " ++ Column1 ++ " = $1",
-    case z_db:q(Query, [Value], Context) of
-        [] -> undefined;
-        [{Id}|_] -> Id
-    end.
+    z_db:q1(Query, [Value], Context).

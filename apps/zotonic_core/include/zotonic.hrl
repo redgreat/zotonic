@@ -1,8 +1,8 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2019 Marc Worrell
+%% @copyright 2009-2025 Marc Worrell
 %% @doc Main definitions for zotonic
 
-%% Copyright 2009-2019 Marc Worrell
+%% Copyright 2009-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@
         dropbox_server      :: pid() | atom(),
         pivot_server        :: pid() | atom(),
         module_indexer      :: pid() | atom(),
-        translation_table   :: pid() | atom()
+        translation_table   :: atom()
         %% End TODO
     }).
 
@@ -114,8 +114,8 @@
     cc = [] :: list() | string() | binary() | undefined,
     bcc = [] :: list() | string() | binary() | undefined,
     from = <<>> :: binary() | string(),
-    reply_to,
-    headers = [] :: list(),
+    reply_to = undefined :: binary() | string() | message_id | undefined,
+    headers = [] :: [ {binary(), binary()} ],
     body,
     raw,
     subject :: iodata() | undefined,
@@ -214,7 +214,8 @@
     smtphost = undefined       :: z_sites_dispatcher:hostname() | undefined,
     hostalias = []             :: list(z_sites_dispatcher:hostname()),
     redirect = false           :: boolean(),
-    dispatch_list = []         :: list(z_sites_dispatcher:dispatch_rule())
+    dispatch_list = []         :: list(z_sites_dispatcher:dispatch_rule()),
+    page_paths = #{}           :: #{ atom() | binary() => z_sites_dispatcher:dispatch_rsc_rule() }
 }).
 
 
@@ -342,7 +343,15 @@
     colsep = $\t :: 0..255,
     skip_first_row = true :: boolean(),
     columns = [] :: list(),
-    importdef
+    importdef = [] :: [
+        % Definitions per row of data, extracting multiple resources
+        #{
+            props => list(),    % Fields from columns mappings
+            edges => list()     % List of object resources {Predicate, ObjectDef}
+        }
+    ],
+    importstate = undefined :: term(),
+    importmodule = import_csv :: module() | undefined
 }).
 
 

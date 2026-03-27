@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2017-2022 Marc Worrell
 %% @doc Check if any answer is correct.
+%% @end
 
 %% Copyright 2017-2022 Marc Worrell
 %%
@@ -17,6 +18,9 @@
 %% limitations under the License.
 
 -module(filter_survey_any_correct_answer).
+-moduledoc("
+Determine if any answer of a question was correct. Used for showing results of thurstone test questions.
+").
 
 -export([
     survey_any_correct_answer/3

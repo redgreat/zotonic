@@ -1,7 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2009-2015 Marc Worrell
-%% Date: 2009-07-16
 %% @doc Replace the content of the target with the result of a render action.
+%% @end
 
 %% Copyright 2009-2015 Marc Worrell
 %%
@@ -18,6 +18,48 @@
 %% limitations under the License.
 
 -module(action_wires_update).
+-moduledoc("
+Updates the content of an HTML element with a template or a literal HTML text.
+
+Example:
+
+
+```django
+<div id=\"mydiv\"><p>Bye Bye.</p></div>
+{% button text=\"hello\" action={update target=\"mydiv\" text=\"<p>Hello World!</p>\"} %}
+```
+
+When clicked, the contents of the div will be set to the HTML fragment &lt;p>Hello World!</p>. This replaces any content present.
+
+Note
+
+Use the [update_iframe](/id/doc_template_action_action_update_iframe) action for updating the contents of an `iframe` element.
+
+Another example, now rendering a template:
+
+
+```django
+<ul id=\"mylist\"><li>Some item</li></li>
+{% button text=\"hello\" action={update target=\"mylist\" template=\"_list_item.tpl\" id=42} %}
+```
+
+This updates the &lt;ul/> with the output of the template \\_list_item.tpl. All arguments to the update action are
+also arguments to the template.
+
+| Argument      | Description                                                                      | Example                       |
+| ------------- | -------------------------------------------------------------------------------- | ----------------------------- |
+| target        | The id of the element receiving the rendered HTML.                               | target=”my-view”              |
+| text          | Literal HTML text to be inserted, no escaping will be done.                      | text=”Hello &lt;b>World</b>”  |
+| template      | Name of the template to be rendered.                                             | template=”\\\\_list\\\\_view.tpl” |
+| include\\\\_all | Add this argument to include all templates with the same name. If not added then the best template will be used. | include\\\\_all                 |
+| catinclude    | Add this argument to use a [catinclude](/id/doc_template_tag_tag_catinclude) instead of a normal include of the template. The id argument *must* be present for a catinclude to work. | catinclude id=1               |
+
+All other arguments are passed as-is to the included template(s).
+
+See also
+
+actions [update_iframe](/id/doc_template_action_action_update_iframe),
+[insert_top](/id/doc_template_action_action_insert_top) and [insert_bottom](/id/doc_template_action_action_insert_bottom).").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([
     render_action/4,

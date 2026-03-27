@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010-2023 Marc Worrell
 %% @doc Reset all input fields in a form.
+%% @end
 
 %% Copyright 2010-2023 Marc Worrell
 %%
@@ -17,6 +18,13 @@
 %% limitations under the License.
 
 -module(action_wires_form_reset).
+-moduledoc("
+Resets the target form to its initial state.
+
+Todo
+
+Extend documentation
+").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_action/4]).
 

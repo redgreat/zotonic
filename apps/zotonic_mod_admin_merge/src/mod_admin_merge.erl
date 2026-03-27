@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2015 Marc Worrell
 %% @doc UI for merging resources in the admin.
+%% @end
 
 %% Copyright 2015 Marc Worrell
 %%
@@ -17,6 +18,27 @@
 %% limitations under the License.
 
 -module(mod_admin_merge).
+-moduledoc("
+Adds functonality to merge two pages together into a single page.
+
+In an interface the *winner* and *loser* can be selected. All connections and properties from the loser are merged into
+the winner. Properties of the winner are unchanged.
+
+After merging the loser will be deleted. Visits to the deleted page will be redirected to the winner page using a *410 Gone*.
+
+On the admin page editor a side panel is added for opening the merge page.
+
+Accepted Events
+---------------
+
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `merge_select`.
+- `event/2` with `submit` messages: `merge`.
+- `event/2` with `postback_notify` messages: `<<\"feedback\">>`.
+
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Admin Merge").

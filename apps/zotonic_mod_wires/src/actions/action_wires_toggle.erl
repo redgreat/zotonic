@@ -18,6 +18,24 @@
 %% limitations under the License.
 
 -module(action_wires_toggle).
+-moduledoc("
+Toggle the visibility of an element.
+
+Example:
+
+
+```django
+{% button action={toggle target=\"myid\"} %}
+```
+
+Shows the element with id myid if it was hidden, otherwise hide it.
+
+See also
+
+actions [show](/id/doc_template_action_action_show), [hide](/id/doc_template_action_action_hide),
+[fade_in](/id/doc_template_action_action_fade_in), [fade_out](/id/doc_template_action_action_fade_out),
+[slide_down](/id/doc_template_action_action_slide_down), [slide_up](/id/doc_template_action_action_slide_up),
+[slide_fade_in](/id/doc_template_action_action_slide_fade_in) and [slide_fade_out](/id/doc_template_action_action_slide_fade_out).").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_action/4]).
 

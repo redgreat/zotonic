@@ -1,6 +1,7 @@
 %% @author Arjan Scherpenisse <arjan@scherpenisse.net>
 %% @copyright 2011 Arjan Scherpenisse
 %% @doc Get a "flat" of menu parents
+%% @end
 
 %% Copyright 2011 Arjan Scherpenisse
 %%
@@ -17,6 +18,21 @@
 %% limitations under the License.
 
 -module(filter_menu_flat).
+-moduledoc("
+Flattens the rsc menu structure for use in a template loop.
+
+Example:
+
+
+```django
+{% for item in m.rsc[id].menu|menu_flat %}
+...
+{% endif %}
+```
+
+See also
+
+[menu_subtree](/id/doc_template_filter_filter_menu_subtree), [menu_trail](/id/doc_template_filter_filter_menu_trail)").
 -export([menu_flat/2]).
 
 

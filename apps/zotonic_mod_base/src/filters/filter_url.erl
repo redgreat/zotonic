@@ -18,6 +18,30 @@
 %% limitations under the License.
 
 -module(filter_url).
+-moduledoc("
+Generates the relative URL for the given dispatch information.
+
+An *relative URL* is an URL that excludes the protcol and hostname. For example `/foo/bar`.
+
+For example, generate a url for the dispatch rule `home` with an extra argument `hello`:
+
+
+```django
+{{ {home hello=\"world\"}|url }}
+```
+
+This is similar to:
+
+
+```django
+{% url home hello=\"world\" %}
+```
+
+Difference between the tag and the filter is that the filter can be used in expressions or with passed values.
+
+See also
+
+[url_abs](/id/doc_template_filter_filter_url_abs), [url](/id/doc_template_tag_tag_url), [sanitize_url](/id/doc_template_filter_filter_sanitize_url), [is_site_url](/id/doc_template_filter_filter_is_site_url), [urlencode](/id/doc_template_filter_filter_urlencode)").
 -export([url/2]).
 
 url(undefined, _Context) ->

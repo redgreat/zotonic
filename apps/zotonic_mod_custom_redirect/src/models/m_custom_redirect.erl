@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2013-2024 Marc Worrell
+%% @copyright 2013-2026 Marc Worrell
 %% @doc Model for configurable host/path redirects
 %% @end
 
-%% Copyright 2013-2024 Marc Worrell
+%% Copyright 2013-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,19 @@
 %% limitations under the License.
 
 -module(m_custom_redirect).
+-moduledoc("
+Model for custom redirect records, exposing redirect list and individual redirect lookup by id.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/list/...` | Return all configured custom redirect records visible in admin redirect management (requires `use` on `mod_custom_redirect`). |
+| `get` | `/+id/...` | Return custom redirect record by numeric id `+id`, or `undefined` when not found (requires `use` on `mod_custom_redirect`). |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -behaviour(zotonic_model).
@@ -125,12 +138,25 @@ list_ids(Context) ->
 list_dispatch_host(Host, Path, Context) ->
     case z_string:is_string(Path) of
         true ->
-            z_db:q("select path, redirect, is_permanent
+            Path1 = remove_slash(Path),
+            case z_db:q("
+                    select path, redirect, is_permanent
                     from custom_redirect
                     where host = lower($1)
                       and (path = lower($2) or path = '')",
-                   [Host, remove_slash(Path)],
-                   Context);
+                   [Host, Path1],
+                   Context)
+            of
+                [] ->
+                    [];
+                Matches when is_list(Matches) ->
+                    case is_redirectable_path(Path1) of
+                        true ->
+                            Matches;
+                        false ->
+                            [ {Path1, <<"/", Path1/binary>>, false} ]
+                    end
+            end;
         false ->
             []
     end.
@@ -141,7 +167,9 @@ list_dispatch_host(Host, Path, Context) ->
     Redirect :: binary(),
     IsPermanent :: boolean().
 get_dispatch(Path, Context) ->
-    case z_string:is_string(Path) of
+    case is_redirectable_path(Path)
+        andalso z_string:is_string(Path)
+    of
         true ->
             z_db:q_row("select redirect, is_permanent
                         from custom_redirect
@@ -152,6 +180,12 @@ get_dispatch(Path, Context) ->
         false ->
             undefined
     end.
+
+is_redirectable_path(<<"/.well-known/", _/binary>>) -> false;
+is_redirectable_path(<<"/.zotonic/", _/binary>>) -> false;
+is_redirectable_path(<<".well-known/", _/binary>>) -> false;
+is_redirectable_path(<<".zotonic/", _/binary>>) -> false;
+is_redirectable_path(_) -> true.
 
 normalize_props(Props) ->
     [

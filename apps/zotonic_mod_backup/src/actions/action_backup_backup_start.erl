@@ -1,6 +1,5 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
-%% Date: 2010-02-15
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +16,13 @@
 %% limitations under the License.
 
 -module(action_backup_backup_start).
+-moduledoc("
+Action which starts a manual backup.
+
+Todo
+
+Extend documentation
+").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([
     render_action/4,
@@ -31,17 +37,25 @@ render_action(TriggerId, TargetId, Args, Context) ->
 
 
 %% @doc Download a backup.
-%% @spec event(Event, Context1) -> Context2
+-spec event(Event, Context1) -> Context2 when
+    Event :: #postback{},
+    Context1 :: z:context(),
+    Context2 :: z:context().
 event(#postback{message={backup_start, IsFullBackup}}, Context) ->
     case not z_acl:is_read_only(Context) andalso z_acl:is_allowed(use, mod_backup, Context) of
         true ->
-            case mod_backup:start_backup(IsFullBackup, Context) of
-                ok ->
-        	        z_render:growl("Started the backup. You can keep this page open or continue working.", Context);
-        	    {error, in_progress} ->
-        	        z_render:growl_error("Could not start the backup because a backup is already in progress.", Context)
-        	end;
+            case backup_config:allow_manual_backup(Context) of
+                true ->
+                    case mod_backup:start_backup(IsFullBackup, Context) of
+                        ok ->
+                	        z_render:growl(?__("Started the backup. You can keep this page open or continue working.", Context), Context);
+                	    {error, in_progress} ->
+                	        z_render:growl_error(?__("Could not start the backup because a backup is already in progress.", Context), Context)
+                	end;
+                false ->
+                    z_render:growl_error(?__("Sorry, manual backups are disabled", Context), Context)
+            end;
         false ->
-            z_render:growl_error("Only administrators can start a backup.", Context)
+            z_render:growl_error(?__("Only administrators can start a backup.", Context), Context)
     end.
 

@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2021 Marc Worrell
+%% @copyright 2021-2026 Marc Worrell
 %% @doc Model for uploading files
+%% @end
 
-%% Copyright 2021 Marc Worrell
+%% Copyright 2021-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,71 @@
 %% limitations under the License.
 
 -module(m_fileuploader).
+-moduledoc("
+Model to start uploads, upload a block and delete uploads.
+
+
+
+Topics
+------
+
+`model/fileuploader/post/new` starts a new fileupload.
+
+The posted message must include the filename and the file size:
+
+
+```javascript
+{
+    filename: \"test.jpg\",
+    size: 1000
+}
+```
+
+The upload URL and current status is returned:
+
+
+```json
+{
+    \"result\": {
+        \"filename\": \"test.jpg\",
+        \"is_complete\": false,
+        \"missing\": [
+            {
+                \"size\": 1000,
+                \"start\": 0
+            }
+        ],
+        \"name\": \"WZkhXoaMwrK2StUHmdpp\",
+        \"received\": 0,
+        \"size\": 10,
+        \"upload_url\": \"https://zotonic.test:8443/fileuploader/upload/WZkhXoaMwrK2StUHmdpp\"
+    },
+    \"status\": \"ok\"
+}
+```
+
+Status `\"error\"` is returned if the name is unknown or any error occured.
+
+`model/fileuploader/post/delete/+name` delete a fileupload.
+
+`model/fileuploader/post/upload/+name/+offset` upload data to a fileupload.
+
+The offset must be an integer and the message payload must be binary data.
+
+`model/fileuploader/get/status/+name` fetch the current fileupload status.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/status/+name/...` | Return sanitized upload status for `+name`: filename, total size, received bytes, completion flag, missing byte ranges, and absolute upload URL. |
+| `post` | `/new` | Start or resume upload `name` for payload `filename` + `size` after media-insert ACL check, then return sanitized upload status metadata. No further lookups. |
+| `post` | `/delete/+name` | Stop and remove the upload worker/session identified by `+name` via `z_fileuploader:stop/1`. No further lookups. |
+| `post` | `/upload/+name/+offset` | Append a binary chunk to upload `+name` at byte offset `+offset` and return updated sanitized upload status (including remaining ranges). No further lookups. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 
 -export([
     m_get/3,
@@ -42,7 +108,7 @@ m_get(_Vs, _Msg, _Context) ->
 
 
 %% @doc Start a file upload or upload a block to a file uploader
--spec m_post( list( binary() ), zotonic_model:opt_msg(), z:context() ) -> {ok, term()} | {error, term()}.
+-spec m_post( list( binary() ), zotonic_model:opt_msg(), z:context() ) -> zotonic_model:post_return().
 m_post([ <<"new">> ], #{ payload := Payload }, Context) when is_map(Payload) ->
     case Payload of
         #{

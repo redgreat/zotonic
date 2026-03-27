@@ -2,6 +2,7 @@
 %% @copyright 2011-2023 Paul Guyot
 %% @doc 'is_not_a' filter, filters a list of ids or test if a single
 %% resource is in a category.
+%% @end
 
 %% Copyright 2011-2023 Paul Guyot
 %%
@@ -18,6 +19,23 @@
 %% limitations under the License.
 
 -module(filter_is_not_a).
+-moduledoc("
+is_not_a mirrors [is_a](/id/doc_template_filter_filter_is_a). It is particularly useful when iterating over a
+category and excluding members of a sub-category (iterating over all images associated with a page except images in the
+thumbnail category).
+
+Example for looping over all media in a rsc but excluding the thumbnail resources:
+
+
+```django
+{% for m in m.rsc[id].media|is_not_a:\"thumbnail\" %}
+...
+{% endfor %}
+```
+
+See also
+
+[is_a](/id/doc_template_filter_filter_is_a), [is_visible](/id/doc_template_filter_filter_is_visible), [filter](/id/doc_template_filter_filter_filter)").
 -export([is_not_a/3, is_not_a/4]).
 
 

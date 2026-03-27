@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2016-2024 Marc Worrell
+%% @copyright 2016-2026 Marc Worrell
 %% @doc Runtime for the compiled templates with Zotonic specific interfaces.
 %% @end
 
-%% Copyright 2016-2024 Marc Worrell
+%% Copyright 2016-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@
     to_render_result/3,
     escape/2,
     trace_compile/4,
+    trace_debug/3,
     trace_render/3,
     trace_block/4
     ]).
@@ -205,7 +206,7 @@ map_template_all_cat_1(Template, Stack, Context) when is_binary(Template) ->
 
 %% @doc Map a template name to a template file.
 -spec map_template_1(binary(), z:context()) ->
-            {ok, file:filename_all()} | {error, enoent|term()}.
+            {ok, #template_file{}} | {error, enoent|term()}.
 map_template_1(Template, Context) when is_binary(Template) ->
     case z_module_indexer:find(template, Template, Context) of
         {ok, #module_index{filepath=Filename, key=Key}} ->
@@ -466,15 +467,13 @@ get(Prop, Args, Default) when is_list(Args) ->
 
 
 %% @doc Fetch the translations for the given text.
--spec get_translations(binary(), term()) -> binary() | z:trans().
+-spec get_translations(binary(), term()) -> z:trans().
 get_translations(Text, Context) ->
-    case z_trans:translations(Text, Context) of
-        #trans{ tr = Tr } -> #trans{ tr = lists:sort(Tr) };
-        Other -> Other
-    end.
+    #trans{ tr = Tr } = z_trans:translations(Text, Context),
+    #trans{ tr = lists:sort(Tr) }.
 
 %% @doc Find the best fitting translation.
--spec lookup_translation(z:trans(), TplVars :: map(), Context :: term()) -> binary().
+-spec lookup_translation(z:trans(), TplVars :: map(), Context :: term()) -> binary() | undefined.
 lookup_translation(#trans{} = Trans, _TplVars, Context) ->
     z_trans:lookup_fallback(Trans, Context).
 
@@ -587,7 +586,6 @@ spaceless_tag(Value, TplVars, Context) ->
 -spec to_bool(Value :: term(), Context :: term()) -> boolean().
 to_bool(#trans{} = Tr, Context) ->
     case z_trans:lookup_fallback(Tr, Context) of
-        undefined -> false;
         <<>> -> false;
         _ -> true
     end;
@@ -707,7 +705,9 @@ to_render_result(V, TplVars, Context) ->
 escape(undefined, _Context) ->
     <<>>;
 escape(Value, _Context) ->
-    z_html:escape(iolist_to_binary(Value)).
+    case z_html:escape(iolist_to_binary(Value)) of
+        B when is_binary(B) -> B
+    end.
 
 %% @doc Called when compiling a module
 -spec trace_compile(atom(), binary(), template_compiler:options(), z:context()) -> ok.
@@ -736,6 +736,34 @@ trace_compile(Module, Filename, Options, Context) ->
     end,
     ok.
 
+%% @doc Called when an enabled template debug checkpoint is hit. The development
+%% module will observe this notification and register the variable values at the
+%% breakpoints. The debug checkpoints are disabled if the current controller has
+%% the 'sensitive' option set, unless the environment is development for which
+%% tracing is always allowed.
+-spec trace_debug(SrcPos, Vars, Context) -> ok when
+    SrcPos :: {File, Line, Col},
+    File :: binary(),
+    Line :: integer(),
+    Col :: integer(),
+    Vars :: map(),
+    Context :: term().
+trace_debug(SrcPos, Vars, Context) ->
+    CanTrace = case z_context:is_sensitive(Context) of
+        true -> m_site:environment(Context) =:= development;
+        false -> true
+    end,
+    if
+        CanTrace ->
+            z_notifier:notify_sync(
+                #debug{
+                    what = template,
+                    arg = {debug, Vars, SrcPos}
+                }, Context);
+        true ->
+            ok
+    end.
+
 %% @doc Called when a template is rendered (could be from an include). Optionally inserts
 %% text before and after the text inclusion into the output stream.
 -spec trace_render(TemplateFilename, Options, Context) -> ok | {ok, Before, After} when
@@ -745,62 +773,77 @@ trace_compile(Module, Filename, Options, Context) ->
     Before :: iodata(),
     After :: iodata().
 trace_render(Filename, Options, Context) ->
-    SrcPos = proplists:get_value(trace_position, Options),
-    z_notifier:notify_sync(
-        #debug{
-            what = template,
-            arg = {render, Filename, SrcPos}
-        }, Context),
-    case m_config:get_boolean(mod_development, debug_includes, Context) of
+    case z_context:get(is_trace_render, Context) of
         true ->
-            case SrcPos of
-                {File, 0, _Col} ->
-                    ?LOG_NOTICE(#{
-                        text => <<"Template extends/overrules">>,
-                        in => zotonic_core,
-                        template => Filename,
-                        at => File
-                    }),
-                    {ok,
-                        [ <<"\n<!-- START ">>, relpath(Filename),
-                          <<" by ">>, relpath(File),
-                          <<" -->\n">> ],
-                        [ <<"\n<!-- END ">>, relpath(Filename),  <<" -->\n">> ]
-                    };
-                {File, Line, _Col} ->
-                    ?LOG_NOTICE(#{
-                        text => <<"Template include">>,
-                        in => zotonic_core,
-                        template => Filename,
-                        at => File,
-                        line => Line
-                    }),
-                    {ok,
-                        [ <<"\n<!-- START ">>, relpath(Filename),
-                          <<" by ">>, relpath(File), $:, integer_to_binary(Line),
-                          <<" -->\n">> ],
-                        [ <<"\n<!-- END ">>, relpath(Filename),  <<" -->\n">> ]
-                    };
-                undefined ->
-                    ?LOG_NOTICE(#{
-                        text => <<"Template render">>,
-                        in => zotonic_core,
-                        template => Filename
-                    }),
-                    {ok,
-                        [ <<"\n<!-- START ">>, relpath(Filename), <<" -->\n">> ],
-                        [ <<"\n<!-- END ">>, relpath(Filename),  <<" -->\n">> ]
-                    }
+            SrcPos = proplists:get_value(trace_position, Options),
+            z_notifier:notify_sync(
+                #debug{
+                    what = template,
+                    arg = {render, Filename, SrcPos}
+                }, Context),
+            case m_config:get_boolean(mod_development, debug_includes, Context) of
+                true ->
+                    case SrcPos of
+                        {File, 0, _Col} ->
+                            ?LOG_NOTICE(#{
+                                text => <<"Template extends/overrules">>,
+                                in => zotonic_core,
+                                template => Filename,
+                                at => File
+                            }),
+                            {ok,
+                                [ <<"\n<!-- START ">>, relpath(Filename),
+                                  <<" by ">>, relpath(File),
+                                  <<" -->\n">> ],
+                                [ <<"\n<!-- END ">>, relpath(Filename),  <<" -->\n">> ]
+                            };
+                        {File, Line, _Col} ->
+                            ?LOG_NOTICE(#{
+                                text => <<"Template include">>,
+                                in => zotonic_core,
+                                template => Filename,
+                                at => File,
+                                line => Line
+                            }),
+                            {ok,
+                                [ <<"\n<!-- START ">>, relpath(Filename),
+                                  <<" by ">>, relpath(File), $:, integer_to_binary(Line),
+                                  <<" -->\n">> ],
+                                [ <<"\n<!-- END ">>, relpath(Filename),  <<" -->\n">> ]
+                            };
+                        undefined ->
+                            ?LOG_NOTICE(#{
+                                text => <<"Template render">>,
+                                in => zotonic_core,
+                                template => Filename
+                            }),
+                            {ok,
+                                [ <<"\n<!-- START ">>, relpath(Filename), <<" -->\n">> ],
+                                [ <<"\n<!-- END ">>, relpath(Filename),  <<" -->\n">> ]
+                            }
+                    end;
+                false ->
+                    ok
             end;
-        false ->
+        _False ->
             ok
     end.
 
 
-%% @doc Called when a block function is called
--spec trace_block({binary(), integer(), integer()}, atom(), atom(), term()) -> ok | {ok, iodata(), iodata()}.
+%% @doc Called when a block function is called. The optionally returned prefix and
+%% postfix are inserted into the output stream before and after the block content, respectively.
+-spec trace_block(SrcPos, BlockName, Module, Context) -> ok | {ok, Before, After} when
+    SrcPos :: {Filename, Line, Column},
+    Filename :: binary(),
+    Line :: integer(),
+    Column :: integer(),
+    BlockName :: atom(),
+    Module :: atom(),
+    Context :: term(),
+    Before :: iodata(),
+    After :: iodata().
 trace_block({File, Line, _Col}, Name, Module, Context) ->
-    case z_convert:to_bool(m_config:get_value(mod_development, debug_blocks, Context)) of
+    case m_config:get_boolean(mod_development, debug_blocks, Context) of
         true ->
             ?LOG_NOTICE(#{
                 text => <<"Template call block">>,

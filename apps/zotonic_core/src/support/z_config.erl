@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2010-2024 Marc Worrell, 2014 Arjan Scherpenisse
+%% @copyright 2010-2025 Marc Worrell, Arjan Scherpenisse
 %% @doc Wrapper for Zotonic application environment configuration
 %% @end
 
-%% Copyright 2010-2024 Marc Worrell, 2014 Arjan Scherpenisse
+%% Copyright 2010-2025 Marc Worrell, Arjan Scherpenisse
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@
 -export([
     get/1,
     get/2,
+
+    set/2,
 
     init_app_env/0,
     maybe_map_env/1,
@@ -52,7 +54,7 @@ init_app_env() ->
 -spec get(atom()) -> any().
 get(listen_ip) ->
     IPv4 = case os:getenv("ZOTONIC_IP") of
-        false -> ?MODULE:get(listen_ip, default(listen_ip));
+        false -> get(listen_ip, default(listen_ip));
         IP -> IP
     end,
     maybe_map_value(listen_ip, IPv4);
@@ -64,8 +66,8 @@ get(listen_ip6) ->
     maybe_map_value(listen_ip6, IPv6);
 get(listen_port) ->
     case os:getenv("ZOTONIC_LISTEN_PORT") of
-        false -> ?MODULE:get(listen_port, default(listen_port));
-        "" -> ?MODULE:get(listen_port, default(listen_port));
+        false -> get(listen_port, default(listen_port));
+        "" -> get(listen_port, default(listen_port));
         "none" -> none;
         Port -> list_to_integer(Port)
     end;
@@ -78,8 +80,8 @@ get(port) ->
     end;
 get(ssl_listen_port) ->
     case os:getenv("ZOTONIC_SSL_LISTEN_PORT") of
-        false -> ?MODULE:get(ssl_listen_port, default(ssl_listen_port));
-        "" -> ?MODULE:get(ssl_listen_port, default(ssl_listen_port));
+        false -> get(ssl_listen_port, default(ssl_listen_port));
+        "" -> get(ssl_listen_port, default(ssl_listen_port));
         "none" -> none;
         Port -> list_to_integer(Port)
     end;
@@ -97,39 +99,39 @@ get(smtp_listen_domain) ->
     end;
 get(smtp_listen_ip) ->
     SmtpIp = case os:getenv("ZOTONIC_SMTP_LISTEN_IP") of
-        false -> ?MODULE:get(smtp_listen_ip, default(smtp_listen_ip));
+        false -> get(smtp_listen_ip, default(smtp_listen_ip));
         "none" -> none;
         SmtpListenIp -> SmtpListenIp
     end,
     maybe_map_value(smtp_listen_ip, SmtpIp);
 get(smtp_listen_port) ->
     case os:getenv("ZOTONIC_SMTP_LISTEN_PORT") of
-        false -> ?MODULE:get(smtp_listen_port, default(smtp_listen_port));
+        false -> get(smtp_listen_port, default(smtp_listen_port));
         "none" -> none;
         SmtpListenPort_ -> list_to_integer(SmtpListenPort_)
     end;
 get(smtp_spamd_ip) ->
-    maybe_map_value(smtp_spamd_ip, ?MODULE:get(smtp_spamd_ip, default(smtp_spamd_ip)));
+    maybe_map_value(smtp_spamd_ip, get(smtp_spamd_ip, default(smtp_spamd_ip)));
 get(zotonic_apps) ->
     case os:getenv("ZOTONIC_APPS") of
-        false -> default(zotonic_apps);
-        "" -> default(zotonic_apps);
+        false -> get(zotonic_apps, default(zotonic_apps));
+        "" -> get(zotonic_apps, default(zotonic_apps));
         ZC -> ZC
     end;
 get(dbhost) ->
     case os:getenv("ZOTONIC_DBHOST") of
-        false -> default(dbhost);
-        "" -> default(dbhost);
+        false -> get(dbhost, default(dbhost));
+        "" -> get(dbhost, default(dbhost));
         DBHost -> DBHost
     end;
 get(dbport) ->
     case os:getenv("ZOTONIC_DBPORT") of
-        false -> default(dbport);
-        "" -> default(dbport);
+        false -> get(dbport, default(dbport));
+        "" -> get(dbport, default(dbport));
         DBPort -> list_to_integer(DBPort)
     end;
 get(Key) ->
-    ?MODULE:get(Key, default(Key)).
+    get(Key, default(Key)).
 
 %% @doc Get value from config file, returning default value when not set (cached).
 -spec get(atom(), any()) -> any().
@@ -141,13 +143,19 @@ get(Key, Default) ->
 			maybe_map_value(Key, maybe_map_env(Value))
 	end.
 
+%% @doc Set a (runtime) config value.
+-spec set(atom(), any()) -> ok.
+set(Key, Value) ->
+    Value1 = maybe_map_value(Key, Value),
+    application:set_env(zotonic, Key, Value1).
+
 maybe_map_env({env, Name}) -> os:getenv(Name);
 maybe_map_env({env, Name, Default}) -> os:getenv(Name, Default);
 maybe_map_env({env_int, Name}) -> z_convert:to_integer(os:getenv(Name));
 maybe_map_env({env_int, Name, Default}) -> z_convert:to_integer(os:getenv(Name, Default));
 maybe_map_env(V) -> V.
 
-%% @doc Translate IP addresses to a tuple(), 'any', or 'none'
+%% @doc Translate some values to their expected format. Extend when needed.
 -spec maybe_map_value(atom(), term()) -> term().
 maybe_map_value(listen_ip, IP) -> map_ip_address(listen_ip, IP);
 maybe_map_value(listen_ip6, IP) -> map_ip_address(listen_ip6, IP);
@@ -155,6 +163,22 @@ maybe_map_value(mqtt_listen_ip, IP) -> map_ip_address(mqtt_listen_ip, IP);
 maybe_map_value(mqtt_listen_ip6, IP) -> map_ip_address(mqtt_listen_ip6, IP);
 maybe_map_value(smtp_listen_ip, IP) -> map_ip_address(smtp_listen_ip, IP);
 maybe_map_value(smtp_spamd_ip, IP) -> map_ip_address(smtp_spamd_ip, IP);
+maybe_map_value(environment, Env) -> z_convert:to_atom(Env);
+maybe_map_value(max_connections, N) -> z_convert:to_integer(N);
+maybe_map_value(ssl_max_connections, N) -> z_convert:to_integer(N);
+maybe_map_value(log_http_buffer_size, N) -> z_convert:to_integer(N);
+maybe_map_value(security_headers, V) -> z_convert:to_bool(V);
+maybe_map_value(smtp_verp_as_from, V) -> z_convert:to_bool(V);
+maybe_map_value(smtp_no_mx_lookups, V) -> z_convert:to_bool(V);
+maybe_map_value(smtp_relay, V) -> z_convert:to_bool(V);
+maybe_map_value(smtp_port, V) -> z_convert:to_integer(V);
+maybe_map_value(smtp_ssl, V) -> z_convert:to_bool(V);
+maybe_map_value(smtp_listen_port, V) -> z_convert:to_integer(V);
+maybe_map_value(smtp_listen_size, V) -> z_convert:to_integer(V);
+maybe_map_value(smtp_delete_sent_after, V) -> z_convert:to_integer(V);
+maybe_map_value(smtp_is_blackhole, V) -> z_convert:to_bool(V);
+maybe_map_value(timezone, V) -> z_convert:to_binary(V);
+maybe_map_value(function_tracing_enabled, V) -> z_convert:to_bool(V);
 maybe_map_value(_Key, Value) ->
     Value.
 
@@ -270,15 +294,19 @@ default(smtp_relay) -> false;
 default(smtp_host) -> "localhost";
 default(smtp_port) -> 25;
 default(smtp_ssl) -> false;
+default(smtp_relay_tls_options) -> [];
 default(smtp_plaintext_fallback) -> true;
 default(smtp_listen_ip) -> {127,0,0,1};
 default(smtp_listen_port) -> 2525;
+default(smtp_listen_size) -> 20971520;  % 20MB
+default(smtp_starttls) -> true;
 default(smtp_spamd_ip) -> none;
 default(smtp_spamd_port) -> 783;
 default(smtp_dns_blocklist) -> z_email_dnsbl:dns_blocklist();
 default(smtp_dns_allowlist) -> z_email_dnsbl:dns_allowlist();
 default(smtp_delete_sent_after) -> 240;
 default(smtp_is_blackhole) -> false;
+default(smtp_max_senders) -> 5;
 default(mqtt_listen_ip) -> ?MODULE:get(listen_ip);
 default(mqtt_listen_ip6) -> ?MODULE:get(listen_ip6);
 default(mqtt_listen_port) -> 1883;
@@ -308,11 +336,19 @@ default(log_http_metrics_buffer_size) -> 10000;
 default(zotonic_apps) -> filename:join([ z_path:get_path(), "apps_user" ]);
 default(proxy_allowlist) -> local;
 default(ip_allowlist) -> local;
+default(ip_allowlist_admin) -> any;
 default(ip_allowlist_system_management) -> any;
 default(sessionjobs_limit) -> erlang:max(erlang:system_info(process_limit) div 10, 10000);
 default(sidejobs_limit) -> erlang:max(erlang:system_info(process_limit) div 2, 50000);
+default(media_resizer_limit) -> 3;
 default(server_header) -> "Zotonic";
 default(html_error_path) -> filename:join(code:priv_dir(zotonic_core), "htmlerrors");
+default(function_tracing_enabled) ->
+    case ?MODULE:get(environment) of
+        development -> true;
+        test -> true;
+        _ -> false
+    end;
 default(_) -> undefined.
 
 -spec all() -> list( {atom(), term()}) .
@@ -339,6 +375,7 @@ all() ->
             log_dir,
             cache_dir,
             password,
+            admin_email,
             timezone,
             listen_ip,
             listen_ip6,
@@ -363,13 +400,16 @@ all() ->
             smtp_host,
             smtp_port,
             smtp_ssl,
+            smtp_relay_tls_options,
             smtp_listen_ip,
             smtp_listen_port,
+            smtp_starttls,
             smtp_spamd_ip,
             smtp_spamd_port,
             smtp_dns_blocklist,
             smtp_dns_allowlist,
             smtp_delete_sent_after,
+            smtp_max_senders,
             mqtt_listen_ip,
             mqtt_listen_ip6,
             mqtt_listen_port,

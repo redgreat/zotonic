@@ -1,10 +1,10 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2019-2024 Driebit BV
+%% @copyright 2019-2025 Driebit BV
 %% @doc Rate limiting of authentication tries and other types of requests
 %% This follows https://www.owasp.org/index.php/Slow_Down_Online_Guessing_Attacks_with_Device_Cookies
 %% @end
 
-%% Copyright 2019-2024 Driebit BV
+%% Copyright 2019-2025 Driebit BV
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -19,6 +19,34 @@
 %% limitations under the License.
 
 -module(mod_ratelimit).
+-moduledoc("
+Implements rate limiting for various resources.
+
+After activation rate limiting will be added to the login and password reset flow.
+
+The rate limiting is done on username or e-mail address. After five attempts the username (or e-mail address) will be
+blocked for an hour.
+
+If a username is used for a successful login, then a special *device-id* cookie is placed on the user-agent. This
+device-id ensures that that particular user-agent is allowed its own five tries. This prevents a username to be blocked
+on known devices by tries on other devices. The device-id cookie is only valid for a single username.
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_auth_checked`: Register failed authentication attempts for rate limiting and clear counters on successful logins.
+- `observe_auth_logon`: Authentication succeeded, set the device id cookie (if we have a username from auth_checked) using `z_ids:id`.
+- `observe_auth_precheck`: Check if rate limiting applies to this authentication request using `m_ratelimit:is_event_limited`.
+- `observe_auth_reset`: Auth reset requested, register it against the device cookie using `m_ratelimit:is_event_limited`.
+- `observe_tick_6h`: Prune logged auth events using `m_ratelimit:prune`.
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `reset_ratelimit`.
+
+").
 
 -author("Marc Worrell <marc@worrell.nl>").
 
@@ -26,6 +54,28 @@
 -mod_description("Rate limiting of authentication tries and other types of requests.").
 -mod_prio(500).
 -mod_depends([ cron ]).
+-mod_config([
+        #{
+            key => device_secret,
+            type => string,
+            default => "",
+            description => "The secret used to sign the device cookie. The device cookie is used to "
+                           "give known browsers their own rate limiting. "
+                           "This is automatically generated and must be kept secret."
+        },
+        #{
+            key => event_period,
+            type => integer,
+            default => 3600,
+            description => "The period in seconds for counting events, defaults to 3600 seconds (1 hour)."
+        },
+        #{
+            key => event_count,
+            type => integer,
+            default => 5,
+            description => "The number of events before a rate limit is applied, defaults to 5."
+        }
+    ]).
 
 -export([
     event/2,

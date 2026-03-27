@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2011 Marc Worrell
+%% @copyright 2011-2026 Marc Worrell
 %% @doc Handle received e-mails, notifies email observers depending on the recipient.
+%% @end
 
-%% Copyright 2011 Marc Worrell
+%% Copyright 2011-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,29 @@
 %% limitations under the License.
 
 -module(mod_email_receive).
+-moduledoc("
+Enables the Zotonic site to receive emails for the site’s users. The user’s email address is username@hostname,
+where the hostname is the hostname as configured in the [site’s config file](/id/doc_developerguide_sites#guide-site-anatomy).
+
+Any email that has no valid recipient is rejected.
+Inbound email module for receiving and routing emails addressed to site users.
+
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_email_add_handler`: Register a recipient handler that maps inbound recipient addresses to modules/resources.
+- `observe_email_drop_handler`: Remove a previously registered inbound recipient handler.
+- `observe_email_ensure_handler`: Ensure a recipient handler registration exists, creating it when needed.
+- `observe_email_received`: Route incoming email to the recipient-specific module handler based on recipient address.
+
+Delegate callbacks:
+
+See also
+
+[mod_email_relay](/id/doc_module_mod_email_relay), [E-mail handling](/id/doc_developerguide_email#guide-email).").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Email Receive Handler").

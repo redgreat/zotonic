@@ -18,6 +18,46 @@
 %% limitations under the License.
 
 -module(mod_image_edit).
+-moduledoc("
+Non destructive edits of images.
+
+This adds a *Edit image* button on the media panel in the admin.
+
+Clicking that button opens an image editor where the following editing parameters can be set:
+
+*   Rotation: in 90˚ increments, used to correct the orientation of an image
+*   Crop: crop any or all sides of an image
+*   Brightness: make an image more or less bright
+*   Contrast: enhances or lowers the contrast
+*   Roll: correct the rotation of an image (between 45˚ and -45˚)
+*   Tilt: rotate an image in the Y direction, as if the viewer moves up or down
+*   Pan: rotate an image in the X direction, as if the viewer moves left or right
+*   Lossless flag: use PNG or GIF for the output image, used for clip art and logos
+*   Crop center: mark a point that should stay in view when using automatic crops
+
+All these operations are non-destructive. They are stored in the `medium_edit_settings` properties and applied whenever
+an image is resized using the `{% image %}` tag.
+
+The original image stays untouched. Downloads will download the original image.
+
+If the original image should be used for a preview then pass the `original` argument to the `{% image %}` tag options.
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_media_preview_options`: Expand the image modifications that influence the generated preview image using `m_image_edit:get_settings`.
+- `observe_media_upload_rsc_props`: Ensure `medium_edit_settings` is present/initialized on media upload.
+- `observe_rsc_update`: Sanitize crop/rotation and related image-edit properties on resource updates.
+
+Delegate callbacks:
+
+- `event/2` with `submit` messages: `edit_form`.
+
+See also
+
+[image](/id/doc_template_tag_tag_image), [Arguments](/id/doc_template_tag_tag_image)").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Image Edit").
@@ -196,4 +236,3 @@ is_crop_center(center) -> true;
 is_crop_center(<<"center">>) -> true;
 is_crop_center("center") -> true;
 is_crop_center(_) -> false.
-

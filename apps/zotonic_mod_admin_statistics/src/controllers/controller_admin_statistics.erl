@@ -1,6 +1,7 @@
 %% @author Maas-Maarten Zeeman <mmzeeman@xs4all.nl>
 %% @copyright 2015-2021 Maas-Maarten Zeeman
 %% @doc View zotonic system statistics
+%% @end
 
 %% Copyright 2015-2021 Maas-Maarten Zeeman
 %%
@@ -17,6 +18,11 @@
 %% limitations under the License.
 
 -module(controller_admin_statistics).
+-moduledoc("
+Todo
+
+Not yet documented.
+").
 -author("Maas-Maarten Zeeman <mmzeeman@xs4all.nl>").
 
 -export([

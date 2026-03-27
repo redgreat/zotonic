@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2011-2020 Marc Worrell
 %% @doc Randomize the order of elements in a list
+%% @end
 
 %% Copyright 2011-2020 Marc Worrell
 %%
@@ -17,6 +18,21 @@
 %% limitations under the License.
 
 -module(filter_randomize).
+-moduledoc("
+Shuffle a list of values.
+
+For example:
+
+
+```django
+{{ [\"a\",\"b\",\"c\"]|randomize }}
+```
+
+The output of this is the same list, but the order of the elements randomized. So for instance: \\[“c”, “a”, “b”\\].
+
+See also
+
+[rand](/id/doc_template_filter_filter_rand), [random](/id/doc_template_filter_filter_random)").
 -export([randomize/2]).
 
 

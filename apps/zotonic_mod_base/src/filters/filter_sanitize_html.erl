@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2021 Marc Worrell
 %% @doc 'sanitize_html' filter, sanitize HTML.
+%% @end
 
 %% Copyright 2021 Marc Worrell
 %%
@@ -17,6 +18,13 @@
 %% limitations under the License.
 
 -module(filter_sanitize_html).
+-moduledoc("
+Sanitize a HTML code. Removes elements and attributes that might be dangerous, like `<script\\>` elements.
+
+This filter parses the complete HTML string and ensures that the output is safe and valid HTML.
+
+Do not use (without caching) on busy pages, as the sanitization process is cpu and memory intensive.
+").
 
 -export([
     sanitize_html/2

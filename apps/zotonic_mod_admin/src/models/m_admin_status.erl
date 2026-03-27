@@ -1,9 +1,9 @@
 %% @author Maas-Maarten Zeeman <mmzeeman@xs4all.nl>
-%% @copyright 2019-2024 Maas-Maarten Zeeman
+%% @copyright 2019-2026 Maas-Maarten Zeeman
 %% @doc Zotonic: admin status model
 %% @end
 
-%% Copyright 2019-2024 Maas-Maarten Zeeman
+%% Copyright 2019-2026 Maas-Maarten Zeeman
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,42 @@
 %% limitations under the License.
 
 -module(m_admin_status).
+-moduledoc("
+Model for admin status endpoints, including Zotonic version and health/status overview values.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/zotonic_version/...` | Return the running Zotonic version string for admin users (ACL-protected). |
+| `get` | `/zotonic_git_version/...` | Return the running Zotonic's git version string for admin users (ACL-protected). |
+| `get` | `/database_version/...` | Return the database server version string (admin ACL-gated via `m_get/3`). |
+| `get` | `/otp_version/...` | Return the exact Erlang/OTP version string (admin ACL-gated via `m_get/3`). |
+| `get` | `/config_dir/...` | Return the active configuration directory path. |
+| `get` | `/security_dir/...` | Return the configured security directory path (`z_config:get(security_dir)`). |
+| `get` | `/log_dir/...` | Return the configured log directory path (`z_config:get(log_dir)`). |
+| `get` | `/data_dir/...` | Return the configured data directory path (`z_config:get(data_dir)`). |
+| `get` | `/cache_dir/...` | Return the configured cache directory path (`z_config:get(cache_dir)`). |
+| `get` | `/work_dir/...` | Return the current working directory of the running node. |
+| `get` | `/files_dir/...` | Return the site files base directory derived from `z_path:files_subdir/2`. |
+| `get` | `/tcp_connection_count/...` | Return the current number of open TCP sockets (`recon:tcp/0`). |
+| `get` | `/group_sockets/...` | Return open TCP sockets grouped by peer IP with counts and ports. |
+| `get` | `/memory/used/...` | Return memory usage grouped by allocator (`recon_alloc:memory(used)`). |
+| `get` | `/memory/allocated/...` | Return allocated memory grouped by allocator (`recon_alloc:memory(allocated)`). |
+| `get` | `/memory/unused/...` | Return unused memory grouped by allocator (`recon_alloc:memory(unused)`). |
+| `get` | `/memory/usage/...` | Return allocator memory usage ratios (`recon_alloc:memory(usage)`). |
+| `get` | `/disks/...` | Return disk space information for mounted disks. |
+| `get` | `/disks/alert/...` | Return whether any disk usage crosses configured alert thresholds. |
+| `get` | `/os_memory/...` | Return operating-system memory statistics. |
+| `get` | `/os_memory/alert/...` | Return whether OS memory pressure crosses alert thresholds. |
+| `get` | `/task_queue/...` | Return pivot/task queue counters from `z_pivot_rsc:count_tasks/1`. |
+| `get` | `/is_ssl_application_configured/...` | Return whether the `ssl` application has session settings configured. |
+| `get` | `/init_arguments/...` | Return all Erlang VM init arguments (`init:get_arguments/0`). |
+| `get` | `/init_arguments/config/...` | Return only `-config` init argument values. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 -author("Maas-Maarten Zeeman <mmzeeman@xs4all.nl>").
 
 -behaviour(zotonic_model).
@@ -32,6 +68,7 @@
 
     otp_version/0,
     zotonic_version/0,
+    zotonic_git_version/0,
     database_version/1,
     tcp_connection_count/0,
     group_sockets/0,
@@ -46,11 +83,18 @@ m_get([ <<"zotonic_version">> | Rest ], _Msg, Context) ->
         true -> {ok, {zotonic_version(), Rest}};
         false -> {error, eacces}
     end;
+m_get([ <<"zotonic_git_version">> | Rest ], _Msg, Context) ->
+    case z_acl:is_admin(Context) of
+        true -> {ok, {zotonic_git_version(), Rest}};
+        false -> {error, eacces}
+    end;
 m_get(Path, Msg, Context) ->
     case z_acl:is_admin(Context) of
         true -> m_get_1(Path, Msg, Context);
         false -> {error, eacces}
     end.
+
+
 m_get_1([ <<"database_version">> | Rest ], _Msg, Context) ->
     case z_acl:is_admin(Context) of
         true -> {ok, {database_version(Context), Rest}};
@@ -163,6 +207,18 @@ otp_version() ->
 zotonic_version() ->
     z_convert:to_binary(?ZOTONIC_VERSION).
 
+%% @doc Return the zotonic's git version.
+-spec zotonic_git_version() -> binary() | undefined.
+zotonic_git_version() ->
+    case z_memo:get(zotonic_git_version) of
+        {cached, Version} ->
+            Version;
+        _ ->
+            % NOTE: this cached value is flushed by 'mod_admin:observe_filewatcher/2'
+            GitVersion = z_utils:git_version(z_path:get_path()),
+            z_memo:set(zotonic_git_version, {cached, GitVersion}),
+            GitVersion
+    end.
 
 %% @doc Return the version string of the used database.
 -spec database_version( z:context() ) -> binary().
@@ -270,4 +326,3 @@ os_memory_alert() ->
 %% @doc Return a list with os memory statistics.
 os_memory() ->
     memsup:get_system_memory_data().
-

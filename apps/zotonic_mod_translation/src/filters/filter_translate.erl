@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2023 Marc Worrell
+%% @copyright 2023-2026 Marc Worrell
 %% @doc Translate a string to the current or given language.
-%% @enddoc
+%% @end
 
-%% Copyright 2023 Marc Worrell
+%% Copyright 2023-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,33 @@
 %% limitations under the License.
 
 -module(filter_translate).
+-moduledoc("
+Translates a (English) value to the current language or the given language.
+
+If the input is a `#trans{}` record then it is extended with the translations from the .po files before the language
+lookup is done. For this the `#trans{}` record *must* have the English translation.
+
+Example with the default language lookup (accessible via the template variable `z_language`):
+
+
+```django
+{{ \"Cancel\"|translate }}
+```
+
+If the current language is `de` then the output is: `\"Abbrechen\"`.
+
+An example with a specific language:
+
+
+```django
+{{ \"Cancel\"|translate:\"nl\" }}
+```
+
+The output would be `\"Annuleer\"`.
+
+See also
+
+[translation](/id/doc_template_filter_filter_translation)").
 -export([
     translate/2,
     translate/3
@@ -64,4 +91,3 @@ translate_1(V, Lang, Context) ->
         V1 when V1 =:= V -> V;
         V1 -> translate(V1, Lang, Context)
     end.
-

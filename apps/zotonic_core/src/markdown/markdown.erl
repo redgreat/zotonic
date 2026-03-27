@@ -12,14 +12,26 @@
 -export([conv/1]).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("../../include/zotonic.hrl").
+
 
 -define(SPACE, 32).
 -define(TAB,    9).
 -define(LF,    10).
 -define(CR,    13).
 -define(NBSP, 160).
+
+% Common HTML entities
 -define(AMP, $&, $a, $m, $p, $;).
 -define(COPY, $&, $c, $o, $p, $y, $;).
+-define(LT, $&, $l, $t, $;).
+-define(GT, $&, $g, $t, $;).
+-define(QUOT, $&, $q, $u, $o, $t, $;).
+-define(SQUOT, $&, $#, $3, $9, $;).
+
+-define(is_alnum(C), ((C >= $a andalso C =< $z) orelse
+                      (C >= $A andalso C =< $Z) orelse
+                      (C >= $0 andalso C =< $9))).
 
 %%% the lexer first lexes the input
 %%% make_lines does 2 passes:
@@ -39,17 +51,26 @@
 %%%   - code blocks
 %%%   - horizontal rules
 %%% the parser then does its magic interpolating the references as appropriate
--spec conv( Markdown::binary() ) -> Html::binary().
-conv(Input) ->
-    String = unicode:characters_to_list(Input),
-    Lex = lex(String),
-    % io:format("Lex is ~p~n", [Lex]),
-    UntypedLines = make_lines(Lex),
-    % io:format("UntypedLines are ~p~n", [UntypedLines]),
-    {TypedLines, Refs} = type_lines(UntypedLines),
-    % io:format("TypedLines are ~p~nRefs is ~p~n",
-    %          [TypedLines, Refs]),
-    unicode:characters_to_binary(parse(TypedLines, Refs)).
+-spec conv( MarkdownText ) -> Html when
+    MarkdownText :: binary(),
+    Html :: binary().
+conv(MarkdownText) when is_binary(MarkdownText) ->
+    case unicode:characters_to_list(MarkdownText, utf8) of
+        String when is_list(String) ->
+            Lex = lex(String),
+            % io:format("Lex is ~p~n", [Lex]),
+            UntypedLines = make_lines(Lex),
+            % io:format("UntypedLines are ~p~n", [UntypedLines]),
+            {TypedLines, Refs} = type_lines(UntypedLines),
+            % io:format("TypedLines are ~p~nRefs is ~p~n",
+            %           [TypedLines, Refs]),
+            case unicode:characters_to_binary(parse(TypedLines, Refs)) of
+                B when is_binary(B) -> B;
+                _ -> z_convert:to_binary(z_html:escape_check(MarkdownText))
+            end;
+        _ ->
+            z_convert:to_binary(z_html:escape_check(MarkdownText))
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%
@@ -134,6 +155,66 @@ p1([{blockquote, P} | T], R, I, Acc) ->
     T2 = string:trim(make_str(T1, R)),
     p1(T, R, I,
        ["\n<blockquote>\n" ++ pad(I + 1) ++ "<p>" ++ T2 ++ "</p>\n</blockquote>" | Acc]);
+%% triple or quadruple code block
+p1([{codequoted, Type, Code} | T], R, I, Acc) ->
+    Type1 = htmlencode(string:trim(m_plain(lists:flatten(Type), []))),
+    Code1 = htmlencode(string:trim(m_plain(lists:flatten(Code), []))),
+    p1(T, R, I,
+       [[ "\n<pre lang=\"", Type1, "\" class=\"notranslate\">",
+          "<code class=\"notranslate language-", Type1,"\">", Code1, "</code>",
+          "</pre>\n" ] | Acc]);
+
+%% Tables
+p1([{table, Headers, Align, Rows} | T], R, I, Acc) ->
+    Html = [
+        "<table role=\"table\" class=\"table\">\n",
+            "  <thead>\n",
+                "    <tr>",
+                    lists:map(
+                        fun({Col, A}) ->
+                            [
+                                "<th",
+                                    case A of
+                                        none -> "";
+                                        center -> " align=\"center\"";
+                                        left -> " align=\"left\"";
+                                        right -> " align=\"right\""
+                                    end,
+                                ">",
+                                string:trim(make_str(snip(Col), R), both, [?SPACE]),
+                                "</th>"
+                            ]
+                        end,
+                        table_zip_align(Headers, Align)),
+                "</tr>\n",
+            "  </thead>\n",
+            "  <tbody>\n",
+            lists:map(
+                fun(Row) ->
+                    [ "    <tr>",
+                    lists:map(
+                        fun({Col, A}) ->
+                            [
+                                "<td",
+                                    case A of
+                                        none -> "";
+                                        center -> " align=\"center\"";
+                                        left -> " align=\"left\"";
+                                        right -> " align=\"right\""
+                                    end,
+                                ">",
+                                string:trim(make_str(snip(Col), R), both, [?SPACE]),
+                                "</td>"
+                            ]
+                        end,
+                        table_zip_align(Row, Align)),
+                    "</tr>\n"]
+                end,
+                Rows),
+            "  </tbody>\n"
+        "</table>\n"
+    ],
+    p1(T, R, I, [ Html | Acc ]);
 
 %% one normal is just normal...
 p1([{normal, P} | T], R, I, Acc) ->
@@ -496,6 +577,63 @@ t_l1([[{{{tag, _Type}, Tag}, _ } = H | T1] = List | T], A1, A2) ->
                  end
     end;
 
+%% Block level code ``` or ````
+t_l1([[{{punc, backtick}, _},
+       {{punc, backtick}, _},
+       {{punc, backtick}, _},
+       {{punc, backtick}, _} | T1 ] = H | T], A1, A2) ->
+    case has_backtick(T1) of
+        true ->
+            t_l1(T, A1, [{normal, H} | A2]);
+        false ->
+            {CodeLines, LinesAfterCode} = split_quadruple_quote(T, []),
+            t_l1(LinesAfterCode, A1, [{codequoted, T1, CodeLines} | A2])
+    end;
+
+t_l1([[{{punc, backtick}, _},
+       {{punc, backtick}, _},
+       {{punc, backtick}, _} | T1 ] = H | T], A1, A2) ->
+    case has_backtick(T1) of
+        true ->
+            t_l1(T, A1, [{normal, H} | A2]);
+        false ->
+            {CodeLines, LinesAfterCode} = split_triple_quote(T, []),
+            t_l1(LinesAfterCode, A1, [{codequoted, T1, CodeLines} | A2])
+    end;
+
+% Tables
+t_l1([
+        [{{punc, vbar}, _} | _ ] = H1,
+        [{{punc, vbar}, _} | _ ] = H2
+        | T
+    ], A1, A2) ->
+    N1 = length(table_split_in_cols(H1)),
+    Hs = lists:map(
+        fun(Col) -> string:trim(unicode:characters_to_binary(make_plain_str(Col))) end,
+        table_split_in_cols(H2)),
+    N2 = length(Hs),
+    IsHeaderCols = is_table_header_cols(Hs),
+    if
+        N1 >= 1, N1 =:= N2, IsHeaderCols ->
+            % Table - fetch next rows starting with '|'
+            {Rows, TRest} = lists:splitwith(
+                fun
+                    ([{{punc, vbar}, _} | _]) -> true;
+                    (_) -> false
+                end,
+                T),
+            % Split H1 in cols
+            HeaderCols = table_split_in_cols(H1),
+            % Fetch alignment from H2
+            Align = lists:map(fun table_align/1, Hs),
+            % Split all in Rows in cols
+            RowsCols = lists:map(fun table_split_in_cols/1, Rows),
+            Table = {table, HeaderCols, Align, RowsCols},
+            t_l1(TRest, A1, [ Table | A2 ]);
+        true ->
+            t_l1([H2|T], A1, [{normal, H1} | A2])
+    end;
+
 %% types a blank line or a code block
 t_l1([[{{lf, _}, _}| []]  = H | T], A1, A2) ->
     t_l1(T, A1, [{linefeed, H} | A2]);
@@ -504,7 +642,7 @@ t_l1([[{{ws, _}, _} | _T1] = H | T], A1, A2) ->
 
 %% Final clause...
 t_l1([H | T], A1, A2) ->
-    t_l1(T, A1, [{normal , H} | A2]).
+    t_l1(T, A1, [{normal, H} | A2]).
 
 t_inline(H, T1, T2, A1, A2) ->
     case snip_ref(T1) of
@@ -513,12 +651,101 @@ t_inline(H, T1, T2, A1, A2) ->
         normal                     -> t_l1(T2, A1, [{normal, H} | A2])
     end.
 
+%% Table helper functions
+table_split_in_cols([ {{punc, vbar}, _} | Ts ]) ->
+    lists:reverse(split_in_cols_1(Ts, [], [])).
+
+split_in_cols_1([{{lf, _}, _}], ColAcc, Acc) ->
+    case is_blank(ColAcc) of
+        true -> Acc;
+        false -> [ lists:reverse(ColAcc) | Acc ]
+    end;
+split_in_cols_1([], ColAcc, Acc) ->
+    case is_blank(ColAcc) of
+        true -> Acc;
+        false -> [ lists:reverse(ColAcc) | Acc ]
+    end;
+split_in_cols_1([ {{punc, bslash}, _}, {{punc, bslash}, _} = H | Ts ], ColAcc, Acc) ->
+    split_in_cols_1(Ts, [H | ColAcc], Acc);
+split_in_cols_1([ {{punc, bslash}, _}, {{punc, vbar}, _} = H | Ts ], ColAcc, Acc) ->
+    split_in_cols_1(Ts, [H | ColAcc], Acc);
+split_in_cols_1([ {{punc, vbar}, _} | Ts ], ColAcc, Acc) ->
+    split_in_cols_1(Ts, [], [ lists:reverse(ColAcc) | Acc ]);
+split_in_cols_1([ H | Ts ], ColAcc, Acc) ->
+    split_in_cols_1(Ts, [H | ColAcc], Acc).
+
+is_table_header_cols(Cols) ->
+    lists:all(fun is_table_header_col/1, Cols).
+
+is_table_header_col(Col) ->
+    re:run(Col, <<"^:?---+:?$">>) =/= nomatch.
+
+table_align(<<":", R/binary>>) ->
+    case binary:last(R) of
+        $: -> center;
+        $- -> left
+    end;
+table_align(R) ->
+    case binary:last(R) of
+        $: -> right;
+        $- -> none
+    end.
+
+table_zip_align(Cs, As) ->
+    table_zip_align_1(Cs, As, []).
+
+table_zip_align_1([], [], Acc) ->
+    lists:reverse(Acc);
+table_zip_align_1([C|Cs], [], Acc) ->
+    table_zip_align_1(Cs, [], [ {C, none} | Acc ]);
+table_zip_align_1([], [A|As], Acc) ->
+    table_zip_align_1([], As, [ {[], A} | Acc ]);
+table_zip_align_1([C|Cs], [A|As], Acc) ->
+    table_zip_align_1(Cs, As, [ {C, A} | Acc ]).
+
 %% strips blanks from the beginning and end
 strip_lines(List) -> lists:reverse(strip_l1(lists:reverse(strip_l1(List)))).
 
 strip_l1([{linefeed, _} | T]) -> strip_l1(T);
 strip_l1([{blank, _} | T])    -> strip_l1(T);
 strip_l1(List)                -> List.
+
+%% split lines till the next triple backqouted line
+split_triple_quote([], Acc) ->
+    {lists:reverse(Acc), []};
+split_triple_quote([
+        [{{punc, backtick}, _},
+         {{punc, backtick}, _},
+         {{punc, backtick}, _} | T] = Line
+        | Lines
+    ], Acc) ->
+    case is_blank(T) of
+        true -> {lists:reverse(Acc), Lines};
+        false -> split_triple_quote(Lines, [ Line | Acc ])
+    end;
+split_triple_quote([ Line | Lines ], Acc) ->
+    split_triple_quote(Lines, [ Line | Acc ]).
+
+%% split lines till the next quadruple backqouted line
+split_quadruple_quote([], Acc) ->
+    {lists:reverse(Acc), []};
+split_quadruple_quote([
+        [{{punc, backtick}, _},
+         {{punc, backtick}, _},
+         {{punc, backtick}, _},
+         {{punc, backtick}, _} | T] = Line
+        | Lines
+    ], Acc) ->
+    case is_blank(T) of
+        true -> {lists:reverse(Acc), Lines};
+        false -> split_quadruple_quote(Lines, [ Line | Acc ])
+    end;
+split_quadruple_quote([ Line | Lines ], Acc) ->
+    split_quadruple_quote(Lines, [ Line | Acc ]).
+
+has_backtick([]) -> false;
+has_backtick([{{punc, backtick}, _} | _]) -> true;
+has_backtick([_ | T]) -> has_backtick(T).
 
 %%
 %% Loads of type rules...
@@ -530,12 +757,20 @@ is_blank([{{ws, _}, _} | T])  -> is_blank(T);
 is_blank(_List)               -> false.
 
 is_block_tag("address")    -> true;
+is_block_tag("aside")      -> true;
 is_block_tag("blockquote") -> true;
 is_block_tag("center")     -> true;
+is_block_tag("colgroup")   -> true;
+is_block_tag("dialog")     -> true;
 is_block_tag("dir")        -> true;
 is_block_tag("div")        -> true;
+is_block_tag("dd")         -> true;
+is_block_tag("details")    -> true;
 is_block_tag("dl")         -> true;
+is_block_tag("dt")         -> true;
 is_block_tag("fieldset")   -> true;
+is_block_tag("figure")     -> true;
+is_block_tag("footer")     -> true;
 is_block_tag("form")       -> true;
 is_block_tag("h1")         -> true;
 is_block_tag("h2")         -> true;
@@ -543,15 +778,22 @@ is_block_tag("h3")         -> true;
 is_block_tag("h4")         -> true;
 is_block_tag("h5")         -> true;
 is_block_tag("h6")         -> true;
+is_block_tag("header")     -> true;
 is_block_tag("hr")         -> true;
 is_block_tag("isindex")    -> true;
+is_block_tag("li")         -> true;
+is_block_tag("nav")        -> true;
+is_block_tag("main")       -> true;
 is_block_tag("menu")       -> true;
 is_block_tag("noframes")   -> true;
 is_block_tag("noscript")   -> true;
 is_block_tag("ol")         -> true;
 is_block_tag("p")          -> true;
 is_block_tag("pre")        -> true;
+is_block_tag("section")    -> true;
+is_block_tag("summary")    -> true;
 is_block_tag("table")      -> true;
+is_block_tag("tfoot")      -> true;
 is_block_tag("thead")      -> true;
 is_block_tag("tbody")      -> true;
 is_block_tag("tr")         -> true;
@@ -881,8 +1123,21 @@ l1([], A1, A2)             -> l1([], [], [l2(A1) | A2]);
 %% these two heads capture opening and closing tags
 l1([$<, $/|T], A1, A2)     -> {Tag, NewT} = closingdiv(T, []),
                               l1(NewT, [], [Tag, l2(A1) | A2]);
-l1([$< | T], A1, A2)       -> {Tag, NewT} = openingdiv(T),
+l1([$<, C | T], A1, A2) when ?is_alnum(C) -> {Tag, NewT} = openingdiv([C|T]),
                               l1(NewT, [], [Tag , l2(A1) | A2]);
+%% these clauses catch code escapes
+l1([$\\, $\\ | T], A1, A2)  -> l1(T, [], [{{punc, bslash}, "\\"}, l2(A1) | A2]);
+l1([$\\, $` | T], A1, A2)   -> l1(T, [], [{{punc, backtick}, "`"}, l2(A1) | A2]);
+l1([$`, $`, C | T], A1, A2) when C =/= $` ->
+                              case strdcode([C|T], []) of
+                                none -> l1([C|T], [], [{{punc, backtick}, "`"}, {{punc, backtick}, "`"}, l2(A1) | A2]);
+                                {Code, T1} -> l1(T1, [], [ {tags, Code}, l2(A1) | A2])
+                              end;
+l1([$`, C | T], A1, A2) when C =/= $` ->
+                              case strcode([C|T], []) of
+                                none -> l1([C|T], [], [{{punc, backtick}, "`"}, l2(A1) | A2]);
+                                {Code, T1} -> l1(T1, [], [ {tags, Code}, l2(A1) | A2])
+                              end;
 %% these clauses are the normal lexer clauses
 l1([$= | T], A1, A2)       -> l1(T, [], [{{md, eq}, "="},   l2(A1) | A2]);
 l1([$- | T], A1, A2)       -> l1(T, [], [{{md, dash}, "-"}, l2(A1) | A2]);
@@ -905,10 +1160,11 @@ l1([$. | T], A1, A2)       -> l1(T, [], [{{punc, fullstop}, "."}, l2(A1) | A2]);
 l1([$: | T], A1, A2)       -> l1(T, [], [{{punc, colon}, ":"}, l2(A1) | A2]);
 l1([$' | T], A1, A2)       -> l1(T, [], [{{punc, singleq}, "'"}, l2(A1) | A2]); %'
 l1([$" | T], A1, A2)       -> l1(T, [], [{{punc, doubleq}, "\""}, l2(A1) | A2]); %"
-l1([$` | T], A1, A2)       -> l1(T, [], [{{punc, backtick}, "`"}, l2(A1) | A2]); %"
-l1([$! | T], A1, A2)       -> l1(T, [], [{{punc, bang}, "!"}, l2(A1) | A2]); %"
-l1([$\\ | T], A1, A2)      -> l1(T, [], [{{punc, bslash}, "\\"}, l2(A1) | A2]); %"
-l1([$/ | T], A1, A2)       -> l1(T, [], [{{punc, fslash}, "/"}, l2(A1) | A2]); %"
+l1([$` | T], A1, A2)       -> l1(T, [], [{{punc, backtick}, "`"}, l2(A1) | A2]); %`
+l1([$! | T], A1, A2)       -> l1(T, [], [{{punc, bang}, "!"}, l2(A1) | A2]); %!
+l1([$\\ | T], A1, A2)      -> l1(T, [], [{{punc, bslash}, "\\"}, l2(A1) | A2]); %\\
+l1([$/ | T], A1, A2)       -> l1(T, [], [{{punc, fslash}, "/"}, l2(A1) | A2]); %/
+l1([$| | T], A1, A2)       -> l1(T, [], [{{punc, vbar}, "|"}, l2(A1) | A2]); %"
 l1([$( | T], A1, A2)       -> l1(T, [], [{bra, "("}, l2(A1) | A2]);
 l1([$) | T], A1, A2)       -> l1(T, [], [{ket, ")"}, l2(A1) | A2]);
 l1([$[ | T], A1, A2)       -> l1(T, [], [{{inline, open}, "["}, l2(A1) | A2]);
@@ -929,6 +1185,28 @@ l1([H|T], A1, A2)          -> l1(T, [H |A1] , A2).
 l2([])   -> [];
 l2(List) -> {string, lists:flatten(lists:reverse(List))}.
 
+strcode([], _Acc) -> none;
+strcode([?CR|_], _Acc) -> none;
+strcode([?LF|_], _Acc) -> none;
+strcode([$`, $` | T], Acc) ->
+    {Bs, T1} = lists:splitwith(fun(C) -> C =:= $` end, T),
+    strcode(T1, [$`, $`, Bs | Acc]);
+strcode([$` | T], Acc) ->
+    {["<code>", htmlencode(lists:reverse(Acc)), "</code>"], T};
+strcode([H | T], Acc) ->
+    strcode(T, [H | Acc]).
+
+strdcode([], _Acc) -> none;
+strdcode([?CR|_], _Acc) -> none;
+strdcode([?LF|_], _Acc) -> none;
+strdcode([$`, $`, $` | T], Acc) ->
+    {Bs, T1} = lists:splitwith(fun(C) -> C =:= $` end, T),
+    strdcode(T1, [$`, $`, $`, Bs | Acc]);
+strdcode([$`, $` | T], Acc) ->
+    {["<code>", htmlencode(lists:reverse(Acc)), "</code>"], T};
+strdcode([H | T], Acc) ->
+    strdcode(T, [H | Acc]).
+
 %% need to put in regexes for urls and e-mail addies
 openingdiv(String) ->
     case get_url(String) of
@@ -943,6 +1221,10 @@ openingdiv(String) ->
 % dumps out a list if it is not an opening div
 openingdiv1([], Acc)         -> {lists:flatten([{{punc, bra}, "<"}
                                           | lex(lists:reverse(Acc))]), []};
+openingdiv1([?CR, ?LF|T], Acc) -> {lists:flatten([{{punc, bra}, "<"}
+                                          | lex(lists:reverse(Acc, [?CR, ?LF | T]))]), []};
+openingdiv1([?LF|T], Acc) -> {lists:flatten([{{punc, bra}, "<"}
+                                          | lex(lists:reverse(Acc, [?LF | T]))]), []};
 openingdiv1([$/,$>| T], Acc) -> Acc2 = lists:flatten(lists:reverse(Acc)),
                                 Acc3 = string:lowercase(Acc2),
                                 [Tag | _T] = string:lexemes(Acc3, " "),
@@ -988,14 +1270,9 @@ get_email_addie(String) ->
         {_, []} ->
             not_email;
         {Possible, [$> | T]} ->
-            EMail_regex = "[a-z0-9!#$%&'*+/=?^_`{|}~-]+"
-                ++ "(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*"
-                ++ "@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+"
-                ++ "(?:[a-zA-Z]{2}|com|org|net|gov|mil"
-                ++ "|biz|info|mobi|name|aero|jobs|museum)",
-            case re:run(Possible, EMail_regex, [ unicode ]) of
-                nomatch    -> not_email;
-                {match, _} -> {{email, Possible}, T}
+            case z_email_utils:is_email(unicode:characters_to_binary(Possible)) of
+                true -> {{email, Possible}, T};
+                false -> not_email
             end
     end.
 
@@ -1008,14 +1285,13 @@ make_plain_str(List) -> m_plain(List, []).
 
 m_plain([], Acc)                           -> lists:flatten(lists:reverse(Acc));
 m_plain([{{ws, none}, none} | T], Acc)     -> m_plain(T, [" " | Acc]);
+m_plain([{email, Email} | T], Acc)         -> m_plain(T, ["<"++Email++">" | Acc]);
 m_plain([{_, Str} | T], Acc)               -> m_plain(T, [Str | Acc]).
 
 make_esc_str(List, Refs) -> m_esc(List, Refs, []).
 
 m_esc([], _R, A)               -> lists:flatten(lists:reverse(A));
-m_esc([{tags, Tag} | T], R, A) -> m_esc(T, R, [{tags, Tag} | A]);
 m_esc([H | T], R, A)           -> m_esc(T, R, [make_str([H], R) | A]).
-
 
 make_str(List, Refs) -> m_str1(List, Refs, []).
 
@@ -1046,10 +1322,10 @@ m_str1([{{inline, open}, O} | T], R, A) ->
             m_str1(Rest, R, [Tag, O | A])
     end;
 m_str1([{email, Addie} | T], R, A) ->
-    m_str1(T, R, [ {tags, "</a>"}, Addie, {tags, "\">"}, Addie,
+    m_str1(T, R, [ {tags, "</a>"}, Addie, {tags, "\">"}, z_url:url_encode(Addie),
                    {tags, "<a href=\"mailto:"} | A]);
 m_str1([{url, Url} | T], R, A) ->
-    m_str1(T, R, [ {tags, "</a>"}, Url, {tags, "\">"}, Url,
+    m_str1(T, R, [ {tags, "</a>"}, Url, {tags, "\">"}, htmlencode(Url),
                    {tags, "<a href=\""} | A]);
 m_str1([{tags, _} = Tag | T], R, A) ->
     m_str1(T, R, [Tag | A]);
@@ -1059,6 +1335,9 @@ m_str1([{{{tag, Type}, Tag}, _} | T], R, A) ->
                  open         -> {tags, "&lt;"  ++ Tag2 ++ "&gt;"};
                  close        -> {tags, "&lt;/" ++ Tag2 ++ "&gt;"};
                  self_closing -> {tags, "&lt;"  ++ Tag2 ++ " /&gt;"}
+                 % open         -> {tags, "<"  ++ Tag2 ++ ">"};
+                 % close        -> {tags, "</" ++ Tag2 ++ ">"};
+                 % self_closing -> {tags, "<"  ++ Tag2 ++ " />"}
              end,
     m_str1(T, R, [TagStr | A]);
 m_str1([{_, Orig} | T], R, A)  ->
@@ -1134,6 +1413,10 @@ htmlencode([$&   | Rest], Acc) -> htmlencode(Rest, ["&amp;" | Acc]);
 htmlencode([$<   | Rest], Acc) -> htmlencode(Rest, ["&lt;" | Acc]);
 htmlencode([$>   | Rest], Acc) -> htmlencode(Rest, ["&gt;" | Acc]);
 htmlencode([160  | Rest], Acc) -> htmlencode(Rest, ["&nbsp;" | Acc]);
+htmlencode([{tags, T}  | Rest], Acc) -> htmlencode(Rest, [T | Acc]);
+htmlencode([L    | Rest], Acc) when is_list(L) ->
+    A1 = htmlencode(L, []),
+    htmlencode(Rest, [A1 | Acc]);
 htmlencode([Else | Rest], Acc) -> htmlencode(Rest, [Else | Acc]).
 
 htmlchars(List) -> htmlchars1(List, []).
@@ -1145,11 +1428,23 @@ htmlchars1([{tags, Tag} | T], Acc)   -> htmlchars1(T, [Tag | Acc]);
 htmlchars1([?CR, ?LF | T], Acc)      -> htmlchars1(T, ["\n" | Acc]);
 htmlchars1([?LF | T], Acc)           -> htmlchars1(T, ["\n" | Acc]);
 htmlchars1([?CR | T], Acc)           -> htmlchars1(T, ["\r" | Acc]);
-%% emphasis is a bit strange - must be preceeded by or followed by
-%% white space to work and can also be escaped
+%% emphasis is a bit strange - it is disabled when delimiters appear immediately
+%% after an alphanumeric character (opening delimiter) or immediately before an
+%% alphanumeric character (closing delimiter). Can also be escaped
 %% there is a non-space filling white space represented by the atom 'none'
 %% which is created in the parser (NOT IN THE LEXER!) and which triggers
 %% emphasis or strong tags being turned on...
+htmlchars1([ $_, $_, $_ | T ], [ Last | _ ] = A) when ?is_alnum(Last) -> htmlchars1(T, [$_, $_, $_ | A]);
+htmlchars1([ $_, $_ | T ], [ Last | _ ] = A) when ?is_alnum(Last) -> htmlchars1(T, [$_, $_ | A]);
+htmlchars1([ $_ | T ], [ Last | _ ] = A) when ?is_alnum(Last) -> htmlchars1(T, [$_ | A]);
+
+htmlchars1([ $*, $*, $* | T ], [ Last | _ ] = A) when ?is_alnum(Last) -> htmlchars1(T, [$*, $*, $* | A]);
+htmlchars1([ $*, $* | T ], [ Last | _ ] = A) when ?is_alnum(Last) -> htmlchars1(T, [$*, $* | A]);
+htmlchars1([ $* | T ], [ Last | _ ] = A) when ?is_alnum(Last) -> htmlchars1(T, [$* | A]);
+
+htmlchars1([ $~, $~ | T ], [ Last | _ ] = A) when ?is_alnum(Last) -> htmlchars1(T, [$~, $~ | A]);
+
+% superstrong
 htmlchars1([$\\, $*, $*, $* | T], A) -> htmlchars1(T, [$*, $*, $* | A]);
 htmlchars1([$*, $*, $* | T], A)      -> {T2, NewA} = superstrong(T, $*),
                                         htmlchars1(T2, [NewA | A]);
@@ -1160,6 +1455,10 @@ htmlchars1([$*, $* | T], A)          -> {T2, NewA} = strong(T, $*),
 %% likewise for strong
 htmlchars1([$\\, $* | T], A)         -> htmlchars1(T, [$* | A]);
 htmlchars1([$* | T], A)              -> {T2, NewA} = emphasis(T, $*),
+                                        htmlchars1(T2, [NewA | A]);
+%% likewise for del
+htmlchars1([$\\, $~, $~ | T], A)     -> htmlchars1(T, [$~, $~ | A]);
+htmlchars1([$~, $~ | T], A)          -> {T2, NewA} = del(T, $~),
                                         htmlchars1(T2, [NewA | A]);
 %% and again for underscores
 htmlchars1([$\\, $_, $_, $_ | T], A) -> htmlchars1(T, [$_, $_, $_ | A]);
@@ -1175,64 +1474,59 @@ htmlchars1([$_, $_ | T], A)          -> {T2, NewA} = strong(T, $_),
 htmlchars1([$\\, $_ | T], A)         -> htmlchars1(T, [$_ | A]);
 htmlchars1([$_ | T], A)              -> {T2, NewA} = emphasis(T, $_),
                                         htmlchars1(T2, [NewA | A]);
-%% handle backtick escaping
-htmlchars1([$\\, $` | T], A)         -> htmlchars1(T, [$` | A]);
-htmlchars1([$`, $` | T], A)          -> {T2, NewA} = dblcode(T),
-                                        htmlchars1(T2, [NewA | A]);
-htmlchars1([$` | T], A)              -> {T2, NewA} = code(T),
-                                        htmlchars1(T2, [NewA | A]);
 htmlchars1([?COPY | T], A)           -> htmlchars1(T, ["&copy;" | A]);
 htmlchars1([?AMP | T], A)            -> htmlchars1(T, ["&amp;" | A]);
+htmlchars1([?LT | T], A)             -> htmlchars1(T, ["&lt;" | A]);
+htmlchars1([?GT | T], A)             -> htmlchars1(T, ["&gt;" | A]);
+htmlchars1([?QUOT | T], A)           -> htmlchars1(T, ["&quot;" | A]);
+htmlchars1([?SQUOT | T], A)          -> htmlchars1(T, ["&#39;" | A]);
 htmlchars1([$& | T], A)              -> htmlchars1(T, ["&amp;" | A]);
 htmlchars1([$< | T], A)              -> htmlchars1(T, ["&lt;" | A]);
+htmlchars1([$> | T], A)              -> htmlchars1(T, ["&gt;" | A]);
+htmlchars1([$" | T], A)              -> htmlchars1(T, ["&quot;" | A]);
 htmlchars1([?NBSP | T], A)           -> htmlchars1(T, ["&nbsp;" | A]);
 htmlchars1([?TAB | T], A)            -> htmlchars1(T, ["    " | A]);
 htmlchars1([none | T], A)            -> htmlchars1(T, A);
+htmlchars1([L | T], A) when is_list(L) ->
+    A1 = htmlchars1(L, []),
+    htmlchars1(T, [ A1 | A ]);
 htmlchars1([H | T], A)               -> htmlchars1(T, [H | A]).
 
 emphasis(List, Delim)    -> interpolate(List, Delim, "em", "" ,[]).
 strong(List, Delim)      -> interpolate2(List, Delim, "strong", "", []).
+del(List, Delim)          -> interpolate2(List, Delim, "del", "", []).
 superstrong(List, Delim) -> interpolate3(List, Delim, "strong", "em", "", []).
-dblcode(List)            -> {T, Tag} = interpolate2(List, $`, "code", "" ,[]),
-                            {T, "<pre>" ++ Tag ++ "</pre>"}.
-code(List)               -> interpolateX(List, $`, "code", "", []).
 
 %% pain in the arse - sometimes the closing tag should be preceded by
 %% a "\n" and sometimes not in showdown.js
 %% interpolate is for single delimiters...
-interpolateX([], Delim, _Tag, _X, Acc) ->
-    {[], [Delim] ++ htmlchars(lists:reverse(Acc))};
-interpolateX([Delim | T], Delim, Tag, X, Acc) ->
-    {T,  "<" ++ Tag ++ ">" ++ htmlchars(lists:reverse(Acc)) ++ X ++
-     "</" ++ Tag ++ ">"};
-interpolateX([H | T], Delim, Tag, X, Acc) ->
-    interpolateX(T, Delim, Tag, X, [H | Acc]).
-
 interpolate([], Delim, _Tag, _X, Acc) ->
     {[], [Delim] ++ htmlchars(lists:reverse(Acc))};
+interpolate([Delim, C | T], Delim, Tag, X, Acc) when ?is_alnum(C) ->
+    interpolate(T, Delim, Tag, X, [C, Delim | Acc]);
 interpolate([Delim | T], Delim, Tag, X, Acc) ->
-    {T,  "<" ++ Tag ++ ">" ++ htmlchars(lists:reverse(Acc)) ++ X ++
-     "</" ++ Tag ++ ">"};
+    {T,  "<" ++ Tag ++ ">" ++ htmlchars(lists:reverse(Acc)) ++ X ++ "</" ++ Tag ++ ">"};
 interpolate([H | T], Delim, Tag, X, Acc) ->
     interpolate(T, Delim, Tag, X, [H | Acc]).
 
 %% interpolate two is for double delimiters...
 interpolate2([], Delim, _Tag,  _X, Acc) ->
     {[], [Delim] ++ [Delim] ++ htmlchars(lists:reverse(Acc))};
+interpolate2([Delim, Delim, C | T], Delim, Tag, X, Acc) when ?is_alnum(C) ->
+    interpolate2(T, Delim, Tag, X, [C, Delim, Delim | Acc]);
 interpolate2([Delim, Delim | T], Delim, Tag, X, Acc) ->
-    {T,  "<" ++ Tag ++ ">" ++ htmlchars(lists:reverse(Acc)) ++ X ++
-     "</" ++ Tag ++ ">"};
+    {T,  "<" ++ Tag ++ ">" ++ htmlchars(lists:reverse(Acc)) ++ X ++ "</" ++ Tag ++ ">"};
 interpolate2([H | T], Delim, Tag, X, Acc) ->
     interpolate2(T, Delim, Tag, X, [H | Acc]).
 
-%% interpolate three is for double delimiters...
+%% interpolate three is for triple delimiters...
 interpolate3([], D, _Tag1, Tag2, _X, Acc)           ->
-    {[], "<" ++ Tag2 ++ ">" ++ [D] ++ "</" ++ Tag2 ++ ">"
-     ++ htmlchars(lists:reverse(Acc))};
+    {[], "<" ++ Tag2 ++ ">" ++ [D] ++ "</" ++ Tag2 ++ ">" ++ htmlchars(lists:reverse(Acc))};
+interpolate3([D, D, D, C | T], D, Tag1, Tag2, X, Acc) when ?is_alnum(C) ->
+    interpolate3(T, D, Tag1, Tag2, X, [C, D, D, D | Acc]);
 interpolate3([D, D, D | T], D, Tag1, Tag2, _X, Acc) ->
     {T,  "<" ++ Tag1 ++ ">" ++  "<" ++ Tag2 ++ ">"
-     ++ htmlchars(lists:reverse(Acc)) ++ "</" ++ Tag2 ++ ">"
-     ++ "</" ++ Tag1 ++ ">"};
+     ++ htmlchars(lists:reverse(Acc)) ++ "</" ++ Tag2 ++ ">" ++ "</" ++ Tag1 ++ ">"};
 interpolate3([H | T], D, Tag1, Tag2, X, Acc) ->
     interpolate3(T, D, Tag1, Tag2, X, [H | Acc]).
 

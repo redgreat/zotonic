@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2022 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Utility functions for datetime handling and representation.
+%% @end
 
-%% Copyright 2009-2022 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -120,7 +121,7 @@ format(Format, Context) ->
 
 %% @doc Format a date according to the format and the timezone settings in the context.
 format(Date, Format, #context{} = Context) ->
-    z_dateformat:format(z_datetime:to_local(Date, Context), Format, format_opts(Date, z_context:tz(Context), Context)).
+    z_dateformat:format(to_local(Date, Context), Format, format_opts(Date, z_context:tz(Context), Context)).
 
 %% @doc Format the current date in UTC.
 format_utc(Format, Context) ->
@@ -151,9 +152,6 @@ to_local({{9999, _, _}, _} = DT, _Tz) ->
     DT;
 to_local({{Y, _, _}, _}, _Tz) when Y > 9999 ->
     ?ST_JUTTEMIS;
-to_local({{Y, M, D}, T}, Tz) when Y =< 1 ->
-    {{Y1, M1, D1}, T1} = to_local({{10, M, D}, T}, Tz),
-    {{Y1 - 10 + Y, M1, D1}, T1};
 to_local(DT, <<"UTC">>) ->
     DT;
 to_local(DT, <<"GMT">>) ->
@@ -167,7 +165,7 @@ to_local(DT, Tz) ->
         case qdate:to_date(z_convert:to_list(Tz), {DT, "GMT"}) of
             {ambiguous, _Standard, Daylight} ->
                 Daylight;
-            {{_, _, _}, {_, _, _}} = NewDT ->
+            {{_Y, _M, _D}, {_H, _I, _S}} = NewDT ->
                 NewDT
         end
     catch
@@ -213,7 +211,7 @@ to_utc(DT, Tz) ->
         case qdate:to_date("GMT", {DT, z_convert:to_list(Tz)}) of
             {ambiguous, _Standard, Daylight} ->
                 Daylight;
-            {{_, _, _}, {_, _, _}} = NewDT ->
+            {{_Y, _M, _D}, {_H, _I, _S}} = NewDT ->
                 NewDT
         end
     catch
@@ -309,19 +307,19 @@ relative_time(N, '-', [<<"year", _/binary>>|_], Now) ->      prev_year(Now, N);
 relative_time(_N, _Op, _Unit, _Now) ->         undefined.
 
 %% @doc Show a humanized version of a relative datetime.  Like "4 months, 3 days ago".
-%% @spec timesince(Date, Context) -> string()
+-spec timesince(term(), z:context()) -> iodata().
 timesince(Date, Context) ->
     timesince(Date, calendar:universal_time(), Context).
 
 %% @doc Show a humanized version of a period between two dates.  Like "4 months, 3 days ago".
-%% @spec timesince(Date, BaseDate, Context) -> string()
+-spec timesince(term(), term(), z:context()) -> iodata().
 timesince(Date, Base, Context) ->
     timesince(Date, Base, ?__(<<"ago">>, Context), ?__(<<"now">>, Context), ?__(<<"in">>, Context), 2, Context).
 
 timesince(Date, Base, IndicatorStrings, Context) ->
     timesince(Date, Base, IndicatorStrings, 2, Context).
 
-%% @spec timesince(Date, BaseDate, IndicatorStrings, Mode, Context) -> string()
+-spec timesince(term(), term(), term(), term(), z:context()) -> iodata().
 %% @doc Show a humanized version of a period between two dates.  Like "4 months, 3 days ago".
 %% `WhenText' is a string containing a maximum of three tokens. Example "ago, now, in"
 timesince(Date, Base, IndicatorStrings, Mode, Context) ->
@@ -338,7 +336,7 @@ timesince(Date, Base, IndicatorStrings, Mode, Context) ->
     end.
 
 %% @doc Show a humanized version of a period between two dates.  Like "4 months, 3 days ago".
-%% @spec timesince(Date, BaseDate, AgoText, NowText, InText, Mode, Context) -> string()
+-spec timesince(term(), term(), term(), term(), term(), term(), z:context()) -> iodata().
 timesince(undefined, _, _AgoText, _NowText, _InText, _Mode, _Context) ->
     "";
 timesince(_, undefined, _AgoText, _NowText, _InText, _Mode, _Context) ->

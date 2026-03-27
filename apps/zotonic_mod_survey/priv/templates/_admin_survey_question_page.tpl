@@ -28,13 +28,19 @@
 		</ul>
 	</div>
 
-	{% with js|survey_is_stop as is_stop %}
+	{% with js|survey_page_options as options %}
 	<div class="jumps">
-		<div class="form-group" style="padding-left: 15px">
-			<label class="checkbox">
-				<input type="checkbox" class="is_stop_page {% if nosubmit %}nosubmit{% endif %}" name="is_stop_page" {% if is_stop %}checked{% endif %} />
-				{_ Remove "Next" button. No answers will be submitted unless you add a button jump to a next page. _}
-			</label>
+		<div class="form-group survey-page-options" style="padding-left: 15px">
+			{% block survey_page_options %}
+				<label class="checkbox">
+					<input type="checkbox" class="{% if nosubmit %}nosubmit{% endif %}" name="page-options-is_stop_page" {% if options.is_stop_page %}checked{% endif %}>
+					{_ Remove "Next" button. No answers will be submitted unless you add a button jump to a next page. _}
+				</label>
+				<label class="checkbox">
+					<input type="checkbox" class="{% if nosubmit %}nosubmit{% endif %}" name="page-options-is_no_back" {% if options.is_no_back %}checked{% endif %}>
+					{_ No "Back" button to this page. If correct/wrong feedback is filled in, then show it directly after this page. _}
+				</label>
+			{% endblock %}
 		</div>
 
 		<ul class="jump-list">

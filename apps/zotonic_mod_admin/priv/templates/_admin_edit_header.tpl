@@ -1,4 +1,4 @@
-{# Showed on top of the resource edit page #}
+{# Shown on top of the resource edit page #}
 <div class="admin-header">
     <div class="admin-header-meta">
         <a class="btn btn-default btn-xs"
@@ -7,20 +7,21 @@
         >
             &lt; {_ Back _}
         </a>
-        &nbsp;
-        <span class='admin-edit-dates'>
-            {_ Created: _} {{ id.created|date:"Y-m-d H:i" }}
-            {% if id.creator_id %}
-                {_ by _} <a href="{% url admin_edit_rsc id=id.creator_id %}">{% include "_name.tpl" id=id.creator_id %}</a>
-            {% endif %}
+        {% block header_meta %}
+            <span class='admin-edit-dates'>
+                {_ Created: _} {{ id.created|date:"Y-m-d H:i" }}
+                {% if id.creator_id %}
+                    {_ by _} <a href="{% url admin_edit_rsc id=id.creator_id %}">{% include "_name.tpl" id=id.creator_id %}</a>
+                {% endif %}
+                &middot;
+                {_ Modified: _} {{ id.modified|date:"Y-m-d H:i" }}
+                {% if id.modifier_id %}
+                    {_ by _} <a href="{% url admin_edit_rsc id=id.modifier_id %}">{% include "_name.tpl" id=id.modifier_id %}</a>
+                {% endif %}
+            </span>
             &middot;
-            {_ Modified: _} {{ id.modified|date:"Y-m-d H:i" }}
-            {% if id.modifier_id %}
-                {_ by _} <a href="{% url admin_edit_rsc id=id.modifier_id %}">{% include "_name.tpl" id=id.modifier_id %}</a>
-            {% endif %}
-        </span>
-        &middot;
-        <span class="text-muted">{_ id: _} {{ id }}</span>
+            <span class="text-muted">{_ id: _}</span> {{ id }}
+        {% endblock %}
     </div>
 
     {% with id.depiction as depict %}
@@ -44,6 +45,14 @@
                         {{ cid.title }} &gt;
                     {% endfor %}
                     {{ cat_id.title }}
+
+                    {% if m.modules.active.mod_content_groups %}
+                        {% with id.content_group_id|default:m.rsc.default_content_group.id as cg_id %}
+                            <span class="text-muted" title="{_ Content group _}">
+                                ({{ cg_id.short_title|default:cg_id.title|truncatechars:20 }})
+                            </span>
+                        {% endwith %}
+                    {% endif %}
                 </a>
                 {% wire id="changecategory"
                     action={dialog_open
@@ -57,6 +66,18 @@
                 <a class="btn btn-default btn-xs" href="{% url admin_overview_rsc qcat=cat_id %}">
                     {% trans "Show all {title} pages" title=cat_id.title %}
                 </a>
+
+                {% if m.modules.active.mod_admin_predicate %}
+                    <a class="btn btn-default btn-xs" href="{% url admin_edges qhassubject=id %}" title="{_ View all connections _}">
+                        ○→ {_ Connections _}
+                    </a>
+                    <a class="btn btn-default btn-xs" href="{% url admin_edges qhasobject=id %}" title="{_ View all referrers _}">
+                        →○ {_ Referrers _}
+                    </a>
+                    <a class="btn btn-default btn-xs" href="{% url admin_edges_graph id=id %}" title="{_ View connection graph _}">
+                        ⋺ {_ Graph _}
+                    </a>
+                {% endif %}
             </div>
         {% endwith %}
     {% endwith %}

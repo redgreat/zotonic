@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'is_defined' filter, test if a value is not defined
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,24 @@
 %% limitations under the License.
 
 -module(filter_is_undefined).
+-moduledoc("
+Tests if a value is undefined.
+
+Checks if the value is empty and outputs a boolean true or false. This is useful in combination with the
+[if](/id/doc_template_tag_tag_if) tag.
+
+For example:
+
+
+```django
+{% if value[1]|is_undefined %}The first elemeent of value was undefined{% endif %}
+```
+
+If the value is `[]` then the output is `The first elemeent of value was undefined`.
+
+See also
+
+[is_defined](/id/doc_template_filter_filter_is_defined), [if_undefined](/id/doc_template_filter_filter_if_undefined), [if](/id/doc_template_filter_filter_if)").
 -export([is_undefined/2]).
 
 is_undefined(V, Context) ->

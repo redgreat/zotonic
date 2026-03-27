@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2021 Marc Worrell
 %% @doc Check if the given URL is a url to the current site.
+%% @end
 
 %% Copyright 2021 Marc Worrell
 %%
@@ -17,6 +18,31 @@
 %% limitations under the License.
 
 -module(filter_is_site_url).
+-moduledoc("
+Test if the given URL is a url for the current site.
+
+If the current site handles requests for the hostname `example.com`, then all of the following expressions will echo `true`:
+
+
+```django
+{{ \"https://example.com\"|is_site_url }}
+{{ \"#foo\"|is_site_url }}
+{{ \"/page/path\"|is_site_url }}
+{{ \"//example.com\"|is_site_url }}
+```
+
+The following will echo `false`:
+
+
+```django
+{{ \"https://foo.test\"|is_site_url }}
+{{ \"example.com\"|is_site_url }}
+{{ \"//foo.test\"|is_site_url }}
+```
+
+See also
+
+[sanitize_url](/id/doc_template_filter_filter_sanitize_url), [url_abs](/id/doc_template_filter_filter_url_abs), [url](/id/doc_template_filter_filter_url), [urlencode](/id/doc_template_filter_filter_urlencode)").
 -export([is_site_url/2]).
 
 -include_lib("zotonic_core/include/zotonic.hrl").

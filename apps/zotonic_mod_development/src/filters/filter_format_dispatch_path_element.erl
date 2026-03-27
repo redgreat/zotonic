@@ -1,6 +1,7 @@
 %% @author Maas-Maarten Zeeman <mmzeeman@xs4all.nl>
 %% @copyright 2023 Maas-Maarten Zeeman
 %% @doc 'format_dispatch_path_element' Formats an element in a path pattern of a dispatch rule
+%% @end
 
 %% Copyright 2023 Maas-Maarten Zeeman
 %%
@@ -17,6 +18,15 @@
 %% limitations under the License.
 
 -module(filter_format_dispatch_path_element).
+-moduledoc("
+Format dispatch path element so variables will be more visible.
+
+See [mod_development](/id/doc_module_mod_development)
+
+Todo
+
+Not yet documented.
+").
 -export([format_dispatch_path_element/2]).
 
 

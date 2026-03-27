@@ -88,8 +88,7 @@
     recreate_table/1
     ]).
 
--define(FULLTEXT_LENGTH, 80).
--define(FTS_LENGTH, 500).
+-define(FULLTEXT_LENGTH, 500).
 
 -include_lib("zotonic_core/include/zotonic.hrl").
 
@@ -228,7 +227,8 @@ is_facet_term(#search_sql_term{}) -> false.
 %% are present in the returned facet values. This ensures that select boxes
 %% with filter terms can still be populated with the selected facet filter.
 ensure_facet_qterms(#{ <<"q">> := Args }, Fs, Context) ->
-    FacetTerms = lists:flatten(find_facet_qterms(Args)),
+    Args1 = expand_qargs(Args, Context),
+    FacetTerms = lists:flatten(find_facet_qterms(Args1)),
     lists:foldl(
         fun({Facet, Value}, Acc) ->
             ensure_facet_value(Facet, Value, Acc, Context)
@@ -237,6 +237,18 @@ ensure_facet_qterms(#{ <<"q">> := Args }, Fs, Context) ->
         FacetTerms);
 ensure_facet_qterms(_SearchArgs, Fs, _Context) ->
     Fs.
+
+expand_qargs(Args, Context) ->
+    lists:flatten(
+        lists:map(
+            fun
+                (#{ <<"term">> := <<"qargs">> }) ->
+                    #{ <<"q">> := Terms } = z_search_props:from_qargs(Context),
+                    Terms;
+                (T) ->
+                    T
+            end,
+            Args)).
 
 ensure_facet_value(Facet, Value, Fs, Context) ->
     case maps:get(Facet, Fs, undefined) of
@@ -735,7 +747,7 @@ render_facet(Id, #facet_def{ name = Name, type = fts } = F, Context) ->
                     [V2],
                     Context),
             [
-                {<<"f_", Name/binary>>, z_string:truncatechars(V1, ?FTS_LENGTH)},
+                {<<"f_", Name/binary>>, z_string:truncatechars(V1, ?FULLTEXT_LENGTH)},
                 {<<"fts_", Name/binary>>, Tsv}
             ]
     end;
@@ -789,14 +801,23 @@ convert_type_1(list, L, _Context) when is_list(L) ->
 convert_type_1(ids, [], _Context) ->
     undefined;
 convert_type_1(ids, L, Context) when is_list(L) ->
-    lists:map(fun(V) -> convert_type_1(id, V, Context) end, L);
+    lists:uniq(lists:map(fun(V) -> convert_type_1(id, V, Context) end, L));
 convert_type_1(Type, L, Context) when is_list(L) ->
     L1 = lists:map(fun(V) -> convert_type_1(Type, V, Context) end, L),
     lists:filter(fun(V) -> V =/= <<>> andalso V =/= undefined end, L1);
 convert_type_1(boolean, V, _Context) -> z_convert:to_bool(V);
 convert_type_1(_, <<>>, _Context) -> undefined;
 convert_type_1(_, undefined, _Context) -> undefined;
-convert_type_1(id, V, Context) -> m_rsc:rid(V, Context);
+convert_type_1(id, V, Context) ->
+    % Allow non-existing ids, so first try an integer conversion.
+    try
+        case z_convert:to_integer(V) of
+            Id when is_integer(Id) -> Id;
+            _ -> m_rsc:rid(V, Context)
+        end
+    catch
+        _:_ -> m_rsc:rid(V, Context)
+    end;
 convert_type_1(integer, V, _Context) -> z_convert:to_integer(V);
 convert_type_1(float, V, _Context) -> z_convert:to_float(V);
 convert_type_1(datetime, V, _Context) -> z_datetime:to_datetime(V);
@@ -811,17 +832,19 @@ convert_type_1(ids, V, Context) when is_binary(V) ->
 convert_type_1(fulltext, V, _Context) ->
     z_string:truncatechars(z_convert:to_binary(V), ?FULLTEXT_LENGTH);
 convert_type_1(fts, V, _Context) ->
-    z_string:truncatechars(z_convert:to_binary(V), ?FTS_LENGTH);
+    z_string:truncatechars(z_convert:to_binary(V), ?FULLTEXT_LENGTH);
 convert_type_1(text, V, _Context) ->
     V1 = z_string:trim(z_html:unescape(z_html:strip(z_convert:to_binary(V)))),
     z_string:truncatechars(V1, ?FULLTEXT_LENGTH).
 
 
 %% @doc Ensure that the facet table is correct, if not then drop the existing
-%% table and request a pivot of all resources to fill the table.
+%% table and request a pivot of all resources to fill the table.  Check if there
+%% active modules that are modules not running. A not-running module might have a
+%% facet definition we need for building the facet table.
 -spec ensure_table(z:context()) -> ok | {error, term()}.
 ensure_table(Context) ->
-    case modules_not_running(Context) of
+    case z_module_manager:active_not_running(Context) of
         [] ->
             case is_table_ok(Context) of
                 true ->
@@ -844,25 +867,6 @@ ensure_table(Context) ->
                 modules => NotRunning
             })
     end.
-
-%% @doc Check if there are module not running. A not-running module might have a facet definition
-%% we need for building the facet table.
--spec modules_not_running(z:context()) -> [ atom() ].
-modules_not_running(Context) ->
-    Status = z_module_manager:get_modules_status(Context),
-    NotRunning = [ M || {M, S} <- Status, S =/= running ],
-    if
-        NotRunning =:= [] ->
-            case proplists:get_value(z_context:site(Context), Status) of
-                running ->
-                    [];
-                _ ->
-                    [ z_context:site(Context) ]
-            end;
-        true ->
-            NotRunning
-    end.
-
 
 %% @doc Check if the current table is compatible with the facets in pivot.tpl
 -spec is_table_ok(z:context()) -> boolean().
@@ -1015,8 +1019,8 @@ recreate_table(Context) ->
         in => zotonic_mod_search,
         text => <<"Faceted search: recreating facet table">>
     }),
-    z_db:q("drop table if exists search_facet cascade", Context),
-    z_db:flush(Context),
+    % z_db:q("drop table if exists search_facet cascade", Context),
+    % z_db:flush(Context),
     create_table(Context).
 
 
@@ -1038,12 +1042,17 @@ create_table(Context) ->
                 }
                 | Cols
             ],
-            ok = z_db:create_table(search_facet, Cols1, Context),
-            [] = z_db:q(
-                "ALTER TABLE search_facet ADD CONSTRAINT fk_facet_id FOREIGN KEY (id)
-                 REFERENCES rsc (id)
-                 ON UPDATE CASCADE ON DELETE CASCADE",
-                Context),
+            ok = z_db:alter_table(search_facet, Cols1, Context),
+            case z_db:constraint_exists(search_facet, fk_facet_id, Context) of
+                true ->
+                    ok;
+                false ->
+                    [] = z_db:q(
+                        "ALTER TABLE search_facet ADD CONSTRAINT fk_facet_id FOREIGN KEY (id)
+                         REFERENCES rsc (id)
+                         ON UPDATE CASCADE ON DELETE CASCADE",
+                        Context)
+            end,
             lists:foreach(
                 fun(Idx) ->
                     [] = z_db:q(Idx, Context)
@@ -1175,7 +1184,7 @@ col_type(datetime) -> <<"timestamp with time zone">>;
 col_type(id) -> <<"integer">>.
 
 col_length(text) -> ?FULLTEXT_LENGTH;
-col_length(fts) -> ?FTS_LENGTH;
+col_length(fts) -> ?FULLTEXT_LENGTH;
 col_length(integer) -> undefined;
 col_length(float) -> undefined;
 col_length(boolean) -> undefined;
@@ -1188,12 +1197,12 @@ facet_to_index(#facet_def{
         type = fulltext
     }) ->
     [
-        <<"CREATE INDEX search_facet_f_", Name/binary, "_key ",
+        <<"CREATE INDEX IF NOT EXISTS search_facet_f_", Name/binary, "_key ",
           "ON search_facet(f_", Name/binary, ")">>,
 
         <<"CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public">>,
 
-        <<"CREATE INDEX search_facet_ft_", Name/binary, "_key ",
+        <<"CREATE INDEX IF NOT EXISTS search_facet_ft_", Name/binary, "_key ",
            "ON search_facet USING gin (ft_", Name/binary, " public.gin_trgm_ops)">>
     ];
 facet_to_index(#facet_def{
@@ -1201,7 +1210,7 @@ facet_to_index(#facet_def{
         type = fts
     }) ->
     [
-        <<"CREATE INDEX search_facet_fts_", Name/binary, "_key ",
+        <<"CREATE INDEX IF NOT EXISTS search_facet_fts_", Name/binary, "_key ",
            "ON search_facet USING gin (fts_", Name/binary, ")">>
     ];
 facet_to_index(#facet_def{
@@ -1209,12 +1218,12 @@ facet_to_index(#facet_def{
         type = Type
     }) when Type =:= ids;
             Type =:= list ->
-    <<"CREATE INDEX search_facet_f_", Name/binary, "_key ",
+    <<"CREATE INDEX IF NOT EXISTS search_facet_f_", Name/binary, "_key ",
        "ON search_facet USING gin (f_", Name/binary, ")">>;
 facet_to_index(#facet_def{
         name = Name
     }) ->
-    <<"CREATE INDEX search_facet_f_", Name/binary, "_key ",
+    <<"CREATE INDEX IF NOT EXISTS search_facet_f_", Name/binary, "_key ",
       "ON search_facet(f_", Name/binary, ")">>.
 
 
@@ -1273,7 +1282,11 @@ template_facets(Context) ->
                     }),
                     {error, duplicate_blocks}
             end;
-        {error, _} = Error ->
+        {error, Reason} = Error ->
+            ?LOG_ERROR(#{ test => <<"Could not check facet.tpl">>,
+                          in => zotonic_mod_search,
+                          result => error,
+                          error => Reason }),
             Error
     end.
 

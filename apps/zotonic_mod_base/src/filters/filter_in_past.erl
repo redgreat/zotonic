@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2010 Marc Worrell
 %% @doc 'in_past' filter, test if a date is in the past.
+%% @end
 
 %% Copyright 2010 Marc Worrell
 %%
@@ -17,6 +18,24 @@
 %% limitations under the License.
 
 -module(filter_in_past).
+-moduledoc("
+Tests if a date is in the past.
+
+Tests if the value is a date and in the past. The value must be a tuple of the format `{Y,M,D}` or `{{Y,M,D},{H,I,S}}`.
+When the value is not a date or datetime, the result is `undefined`.
+
+For example:
+
+
+```django
+{% if value|in_past %}Those days have gone.{% endif %}
+```
+
+This outputs “Those days have gone.” if the value is a date and in the past.
+
+See also
+
+[in_future](/id/doc_template_filter_filter_in_future)").
 -export([in_past/2]).
 
 

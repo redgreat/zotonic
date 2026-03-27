@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2011-2024 Marc Worrell
+%% @copyright 2011-2025 Marc Worrell
 %% @doc Handle received e-mail.
 %% @end
 
-%% Copyright 2011-2024 Marc Worrell
+%% Copyright 2011-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -33,6 +33,20 @@
 -include_lib("zotonic_core/include/zotonic.hrl").
 
 %% @doc Handle a received e-mail
+-spec received(Recipients, EnvelopFrom, Peer, Reference, Type, Headers, Params, Body, Data) -> Results when
+    Recipients :: [ RecipientEmail ],
+    RecipientEmail :: binary(),
+    EnvelopFrom :: binary(),
+    Peer :: tuple(),
+    Reference :: binary(),
+    Type :: {binary(), binary()},
+    Headers :: [ {binary(), binary()} ],
+    Params :: #{ atom() => term() },
+    Body :: term(),
+    Data :: term(),
+    Results :: [ Result ],
+    Result :: {ok, binary() | undefined}
+            | {error, term()}.
 received(Recipients, EnvelopFrom, Peer, Reference, {Type, Subtype}, Headers, Params, Body, Data) ->
     ParsedEmail = parse_email({Type, Subtype}, Headers, Params, Body),
     ParsedEmail1 = generate_text(generate_html(ParsedEmail)),
@@ -163,13 +177,20 @@ received_1(Recipient, ParsedEmail,
                             {ok, Other}
                     end;
                 true ->
+                    HeaderFrom = proplists:get_value(<<"from">>, LHeaders),
+                    HeaderTo = proplists:get_value(<<"to">>, LHeaders),
                     ?LOG_NOTICE(#{
                         text => <<"[smtp] Dropping email from blocked address">>,
                         in => zotonic_core,
                         result => error,
                         reason => blocked,
+                        recipient => Recipient,
                         email => ParsedEmail#email.from,
-                        recipient => Recipient
+                        email_blocked => is_blocked(ParsedEmail#email.from, Context),
+                        header_from => HeaderFrom,
+                        header_from_blocked => is_blocked(HeaderFrom, Context),
+                        header_to => HeaderTo,
+                        header_to_blocked => is_blocked(HeaderTo, Context)
                     }),
                     LogEmail = #log_email{
                         severity = ?LOG_LEVEL_WARNING,
@@ -185,7 +206,7 @@ received_1(Recipient, ParsedEmail,
                         envelop_from = ParsedEmail#email.from
                     },
                     z_notifier:notify(#zlog{ props = LogEmail }, Context),
-                    % Silently ignore - do now warn sender
+                    % Silently ignore - do not warn sender
                     {ok, undefined}
             end;
         {error, unknown_host} ->
@@ -228,8 +249,14 @@ is_blocked(EmailAddress, Context) ->
         {ok, {binary(), [ binary() ], binary(), atom()}}
       | {error, unknown_host | not_running}.
 get_site(Recipient) ->
-    [Username, Domain] = binstr:split(Recipient, <<"@">>, 2),
-    [LocalPart|LocalTags] = binstr:split(Username, <<"+">>),
+    [Username, Domain] = case binary:split(Recipient, <<"@">>) of
+        [_,_] = UD -> UD;
+        [U] -> [U, <<>>]
+    end,
+    [LocalPart|LocalTags] = case binary:split(Username, <<"+">>, [ global, trim_all ]) of
+        [] -> [<<>>];
+        Ps -> Ps
+    end,
     case z_sites_dispatcher:get_site_for_hostname(z_string:to_lower(Domain)) of
         {ok, Site} ->
             case z_sites_manager:wait_for_running(Site) of
@@ -252,7 +279,11 @@ sanitize_utf8(undefined) ->
 sanitize_utf8(S) ->
     z_string:sanitize_utf8(S).
 
-%% @doc Parse a file using the html/text parse routines. This is used for testing
+%% @doc Parse a file using the html/text parse routines. This is useful for testing.
+-spec parse_file(Filename) -> {ok, Parsed} | {error, Reason} when
+    Filename :: file:filename_all(),
+    Parsed :: #email{},
+    Reason :: term().
 parse_file(Filename) ->
     case file:read_file(Filename) of
         {ok, Data} ->
@@ -363,7 +394,7 @@ parse_email({<<"message">>, <<"rfc822">>}, _Headers, _Params, Body) ->
               <<"<dt>Date:</dt><dd>">>, z_html:escape(proplists:get_value(<<"Date">>, FwdHeaders, <<>>)), <<"</dd>">>,
               <<"</dl>">>
              ]),
-    H = #email{html=Html, text=Text},
+    H = #email{ html = Html, text = Text },
     E = parse_email({FwdType, FwdSubType}, FwdHeaders, FwdParameters, FwdBody),
     append_email(H, E);
 
@@ -374,10 +405,10 @@ parse_email(Mime, _Headers, Params, Body) ->
 %% @doc Merge two email parts
 merge_email(A, B) ->
     A#email{
-      subject=take_defined(A#email.subject, B#email.subject),
-      text=take_defined(A#email.text, B#email.text),
-      html=take_defined(A#email.html, B#email.html),
-      attachments=A#email.attachments++B#email.attachments
+      subject = take_defined(A#email.subject, B#email.subject),
+      text = take_defined(A#email.text, B#email.text),
+      html = take_defined(A#email.html, B#email.html),
+      attachments = A#email.attachments++B#email.attachments
      }.
 
 %% @doc Append two e-mails (used in multipart/mixed messages)
@@ -385,10 +416,10 @@ append_email(A, B) ->
     A1 = generate_text(generate_html(A)),
     B1 = generate_text(generate_html(B)),
     #email{
-            subject=take_defined(A1#email.subject, B1#email.subject),
-            html=append(A1#email.html, B1#email.html),
-            text=append(A1#email.text, B1#email.text),
-            attachments=A1#email.attachments++B1#email.attachments
+            subject = take_defined(A1#email.subject, B1#email.subject),
+            html = append(A1#email.html, B1#email.html),
+            text = append(A1#email.text, B1#email.text),
+            attachments = A1#email.attachments++B1#email.attachments
           }.
 
 take_defined(undefined, B) -> B;
@@ -398,17 +429,17 @@ append(undefined, B) -> B;
 append(A, undefined) -> A;
 append(A, B) -> <<A/binary, B/binary>>.
 
-generate_text(#email{text=undefined, html=undefined} = E) ->
+generate_text(#email{ text = undefined, html = undefined } = E) ->
     E;
-generate_text(#email{text=undefined, html=Html} = E) ->
-    E#email{text=z_markdown:to_markdown(Html, [no_html])};
+generate_text(#email{ text = undefined, html = Html } = E) ->
+    E#email{ text = z_markdown:to_markdown(Html, [no_html, no_tables]) };
 generate_text(E) ->
     E.
 
-generate_html(#email{text=undefined, html=undefined} = E) ->
+generate_html(#email{ text = undefined, html = undefined } = E) ->
     E;
-generate_html(#email{text=Text, html=undefined} = E) ->
-    E#email{html=z_html:escape_link(Text)};
+generate_html(#email{ text = Text, html = undefined } = E) ->
+    E#email{ html = z_html:escape_link(Text) };
 generate_html(E) ->
     E.
 
@@ -424,9 +455,9 @@ attachment({Type, SubType}, Params, Body) ->
     #email{
             attachments=[
                          #upload{
-                            mime=append_mime(Type, SubType),
-                            data=Body,
-                            filename=proplists:get_value(<<"filename">>, DispParams)
+                            mime = append_mime(Type, SubType),
+                            data = Body,
+                            filename = proplists:get_value(<<"filename">>, DispParams)
                            }
                         ]
           }.

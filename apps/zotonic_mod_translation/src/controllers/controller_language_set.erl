@@ -1,6 +1,7 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2012-2021 Marc Worrell
 %% @doc Set the language, redirect back to the page q.p
+%% @end
 
 %% Copyright 2012-2021 Marc Worrell
 %%
@@ -17,6 +18,14 @@
 %% limitations under the License.
 
 -module(controller_language_set).
+-moduledoc("
+Controller which sets the language as given in the `code` argument, and redirects the user back to the page given in the
+`p` argument.
+
+Todo
+
+Extend documentation
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -export([

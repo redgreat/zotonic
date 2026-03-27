@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2010-2022 Marc Worrell
+%% @copyright 2010-2026 Marc Worrell
 %% @doc Model for the accessing the HTTP request properties. Exposes Cowmachine's wrq.erl
+%% @end
 
-%% Copyright 2010-2022 Marc Worrell
+%% Copyright 2010-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,115 @@
 %% limitations under the License.
 
 -module(m_req).
+-moduledoc("
+This model gives access to the request variables from within a template.
+
+Sometimes you need direct access to request variables in your template. The m_req model is meant for this. It exposes
+some values from the Cowmachine request record.
+
+
+
+Fetching a single value
+-----------------------
+
+You can fetch individual values by key, for example:
+
+
+```django
+{{ m.req.host|escape }}
+```
+
+
+
+Viewing all request variables
+-----------------------------
+
+Use the [print](/id/doc_template_tag_tag_print) tag to get a complete overview of all request variables:
+
+
+```django
+{% print m.req|make_list %}
+```
+
+This will show something like:
+
+
+```django
+[{method,<<\"GET\">>},
+ {version,{1,1}},
+ {peer,<<\"127.0.0.1\">>},
+ {is_ssl,false},
+ {host,<<\"mysite.test\">>},
+ {raw_path,<<\"/en/page/1234?foo=bar\">>},
+ {path,<<\"/en/page/1234\">>},
+ {qs,[{<<\"foo\">>,<<\"bar\">>}]},
+ {referrer,<<\"http://mysite.test:8000/\">>},
+ {user_agent,<<\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/601.4.4 (KHTML, like Gecko) Version/9.0.3 Safari/601.4.4\">>},
+ {is_crawler,false},
+ {req_id,525158920},
+ {headers,[{<<\"accept\">>,
+            <<\"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\">>},
+           {<<\"accept-encoding\">>,<<\"gzip, deflate\">>},
+           {<<\"accept-language\">>,<<\"en-us\">>},
+           {<<\"cache-control\">>,<<\"max-age=0\">>},
+           {<<\"connection\">>,<<\"keep-alive\">>},
+           {<<\"cookie\">>,
+            \"z_logon=; z_sid=LopWHBmHXCs94virnboZhBHLKV6m1Cga; z_ua=c%3Ddesktop%26u%3D1%26t%3D1%26w%3D1920%26h%3D1200\"},
+           {<<\"dnt\">>,<<\"1\">>},
+           {<<\"host\">>,<<\"mysite.test:8000\"},
+           {<<\"referer\">>,<<\"http://mysite.test:8000/\">>},
+           {<<\"user-agent\">>,
+            <<\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/601.4.4 (KHTML, like Gecko) Version/9.0.3 Safari/601.4.4\">>}]},
+ {timezone,<<\"UTC\">>},
+ {language,en}]
+```
+
+Please note that all values are raw and not escaped, take care to escape the values before you use them in your
+templates, using the [escape](/id/doc_template_filter_filter_escape) filter.
+
+The [make_list](/id/doc_template_filter_filter_make_list) filter is used to force the evaluation of the model;
+otherwise it would just print `{m,req,undefined}`.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/+key/...` | Return request/context value for key `+key` (must map to an existing atom key); returns `unknown_key` for unknown key names. |
+| `get` | `/` | Return default request overview list from `values/1` (`method`, `version`, `peer`, `is_ssl`, `host`, `port`, `raw_path`, `path`, `qs`, `referrer`, `user_agent`, `is_crawler`, `headers`, `timezone`, `language`). No further lookups. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+
+Known Keys
+----------
+
+The following keys are recognized by `m.req.+key`:
+
+| Key | Description |
+| --- | --- |
+| `method` | HTTP method as binary, for example `<<\"GET\">>`. |
+| `version` | HTTP protocol version tuple, for example `{1,1}`. |
+| `peer` | Remote client IP as binary text. |
+| `peer_ip` | Remote client IP as tuple form. |
+| `is_ssl` | Whether request is HTTPS (`true`/`false`). |
+| `scheme` | Request scheme (`<<\"http\">>` / `<<\"https\">>`). |
+| `host` | Request host header (without path). |
+| `port` | Effective request port (proxy-aware; site config port when not proxied). |
+| `raw_path` | Raw request path including query string. |
+| `path` | Request path without query string. |
+| `qs` | Parsed query arguments list. |
+| `headers` | All request headers as `{Name, Value}` pairs. |
+| `referer` | `Referer` request header value. |
+| `referrer` | Alias of `referer`. |
+| `user_agent` | User-Agent header value (truncated to max 500 chars). |
+| `is_crawler` | Whether User-Agent is detected as crawler. |
+| `site` | Current Zotonic site name. |
+| `timezone` | Current request/context timezone. |
+| `language` | Current request/context language. |
+| `is_http_request` | Context flag indicating HTTP request processing context. |
+| `session_id` | Current session id when available, else `undefined`. |
+| `csp_nonce` | CSP nonce for the current response/context. |
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 -behaviour(zotonic_model).
@@ -57,10 +167,20 @@ get(language, #context{} = Context) -> z_context:language(Context);
 get(csp_nonce, Context) -> z_context:csp_nonce(Context);
 get(is_crawler, #context{} = Context) -> z_user_agent:is_crawler(Context);
 get(is_http_request, #context{} = Context) -> z_context:get(is_http_request, Context);
+get(session_id, #context{} = Context) ->
+    case z_context:session_id(Context) of
+        {ok, SId} -> SId;
+        {error, _} -> undefined
+    end;
 get(peer_ip, #context{} = Context) ->
     case z_context:get(peer_ip, Context) of
         undefined -> maybe_get_req(peer_ip, Context);
         PeerIP -> PeerIP
+    end;
+get(peer, #context{} = Context) ->
+    case z_context:get(peer_ip, Context) of
+        undefined -> maybe_get_req(peer, Context);
+        PeerIP -> ip_ntob(PeerIP)
     end;
 get(user_agent, #context{} = Context) ->
     case z_context:get(user_agent, Context) of
@@ -106,6 +226,13 @@ get_req(referer, Context) -> cowmachine_req:get_req_header(<<"referer">>, Contex
 get_req(referrer, Context) -> get_req(referer, Context);
 get_req(_Key, _Context) -> undefined.
 
+ip_ntob(IP) when is_tuple(IP) ->
+    case inet:ntoa(IP) of
+        {error, _} -> undefined;
+        IPS -> z_convert:to_binary(IPS)
+    end;
+ip_ntob(_) ->
+    undefined.
 
 -spec values( z:context() ) -> list({atom(), any()}).
 values(Context) ->

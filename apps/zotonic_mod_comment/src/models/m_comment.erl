@@ -1,10 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2010-2011 Marc Worrell
-%% Date: 2010-01-15
-%%
+%% @copyright 2010-2026 Marc Worrell
 %% @doc Model for managing the comments on a page.
+%% @end
 
-%% Copyright 2010-2011 Marc Worrell
+%% Copyright 2010-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -19,6 +18,22 @@
 %% limitations under the License.
 
 -module(m_comment).
+-moduledoc("
+Model for comments attached to resources. It provides listing, moderation checks, counting, and retrieval of individual comments.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/anonymous/...` | Return whether anonymous comments are allowed; defaults to `true` when `mod_comment.anonymous` is unset. |
+| `get` | `/moderate/...` | Return whether new comments require moderation; defaults to `false` when `mod_comment.moderate` is unset/empty. |
+| `get` | `/rsc/+id/...` | Return all comment rows for resource `+id` (ascending by creation time; requires resource visibility). |
+| `get` | `/count/+id/...` | Return total comment count for resource `+id` (requires resource visibility). |
+| `get` | `/get/+commentid/...` | Return comment record `+commentid`, or `undefined` if missing; access is denied when the linked resource is not visible. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 -behaviour(zotonic_model).
@@ -95,7 +110,6 @@ list_rsc(RscId, Context) ->
 
 
 %% @doc Count comments of the resource.
-%% @spec count_rsc(int(), Context) -> [ PropList ]
 -spec count_rsc(m_rsc:resource(), z:context()) -> list().
 count_rsc(RscId, Context) ->
     F = fun() ->
@@ -105,19 +119,26 @@ count_rsc(RscId, Context) ->
 
 
 %% @doc Fetch a specific comment from the database.
-%% @spec get(int(), Context) -> PropList
+-spec get(integer(), z:context()) -> proplists:proplist() | undefined.
 get(CommentId, Context) ->
     z_db:assoc_props_row("select * from comment where id = $1", [CommentId], Context).
 
 
 %% @doc Insert a new comment. Fetches the submitter information from the Context.
--spec insert(m_rsc:resource(), Name::string(), Email::string(), Message::string(), Is_visible::boolean(), z:context()) -> {ok, pos_integer()} | {error, any()}.
-insert(RscId, Name, Email, Message, Is_visible, Context) ->
+-spec insert(RscId, Name, Email, Message, IsVisible, Context) -> {ok, CommentId} | {error, any()} when
+    RscId :: m_rsc:resource(),
+    Name :: string() | binary(),
+    Email :: string() | binary(),
+    Message :: string() | binary(),
+    IsVisible :: boolean(),
+    Context :: z:context(),
+    CommentId :: pos_integer().
+insert(RscId, Name, Email, Message, IsVisible, Context) ->
     case z_acl:rsc_visible(RscId, Context)
         and (z_auth:is_auth(Context)
             orelse z_convert:to_bool(m_config:get_value(mod_comment, anonymous, true, Context))) of
         true ->
-            Email = z_string:trim(Email),
+            Email1 = z_string:trim(Email),
             Name1 = z_html:escape(z_string:trim(Name)),
             Message1 = z_sanitize:escape_link(z_string:trim(Message), Context),
             KeepInformed = z_convert:to_bool(z_context:get_q(<<"keep_informed">>, Context, false)),
@@ -127,20 +148,20 @@ insert(RscId, Name, Email, Message, Is_visible, Context) ->
                 true ->
                     {undefined, Context};
                 false ->
-                    case m_client_local_storage:device_id(Context) of
+                    case m_client_local_storage:ensure_device_id(Context) of
                         {{ok, CId}, Ctx} -> {CId, Ctx};
                         {{error, _}, Ctx} -> {undefined, Ctx}
                     end
             end,
             Props = [
                 {rsc_id, m_rsc:rid(RscId, Context)},
-                {is_visible, Is_visible},
+                {is_visible, IsVisible},
                 {user_id, z_acl:user(Context)},
                 {persistent_id, DeviceId},
                 {name, Name1},
                 {message, Message1},
-                {email, Email},
-                {gravatar_code, gravatar_code(Email)},
+                {email, Email1},
+                {gravatar_code, gravatar_code(Email1)},
                 {keep_informed, KeepInformed},
                 {ip_address, IPAddress},
                 {user_agent, UserAgent}
@@ -202,7 +223,7 @@ check_editable(CommentId, Context) ->
 
 
 %% @doc Return the gravatar code of an email address. See also http://gravatar.com/
-%% @spec gravatar_code(Email) -> list()
+-spec gravatar_code(atom() | binary() | string()) -> binary().
 gravatar_code(Email) ->
     z_string:to_lower(z_utils:hex_encode(erlang:md5(z_string:to_lower(Email)))).
 

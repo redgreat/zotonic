@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %%
 %% Based on code by Rusty Klophaus
 
-%% Copyright 2009 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,29 @@
 %% limitations under the License.
 
 -module(validator_base_email).
+-moduledoc("
+Check if the content of the input field is an e-mail address.
+
+For example:
+
+
+```django
+<input type=\"text\" id=\"email\" name=\"email\" value=\"\" />
+{% validate id=\"email\" type={email} %}
+```
+
+
+
+Arguments
+---------
+
+| Argument          | Description                                                                      | Example                                               |
+| ----------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| failure\\\\_message | Message to show when the entered value is not an e-mail address. Defaults to “Incorrect E-mail” | `failure_message=\"Please enter your e-mail address.\"` |
+
+See also
+
+[Forms and validation](/id/doc_developerguide_forms_and_validation#guide-validators)").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -export([render_validator/5, validate/5]).
 
@@ -27,7 +50,8 @@ render_validator(email, TriggerId, _TargetId, Args, _Context)  ->
 	{[], Script}.
 
 
-%% @spec validate(Type, TriggerId, Values, Args, Context) -> {ok,AcceptedValue} | {error,Id,Error}
+-spec validate(term(), term(), term(), list(), z:context()) ->
+    {{ok, term()}, z:context()} | {{error, term(), term()}, z:context()}.
 %%          Error = invalid | novalue | {script, Script}
 validate(email, Id, Value, _Args, Context) ->
     case z_string:trim(Value) of

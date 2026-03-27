@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2009-2020 Marc Worrell
+%% @copyright 2009-2026 Marc Worrell
 %% @doc Open a dialog with some fields to make a new page/resource.
+%% @end
 
-%% Copyright 2009-2020 Marc Worrell
+%% Copyright 2009-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,6 +18,40 @@
 %% limitations under the License.
 
 -module(action_admin_dialog_new_rsc).
+-moduledoc("
+Show the admin dialog for creating a new [resource](/id/doc_glossary#term-resource).
+
+When the resource is created, the user is redirected to the admin edit page. This action exports a postback called
+`new_page` which is used to create the page:
+
+
+```django
+{% wire id=#form type=\"submit\"
+      postback={new_page subject_id=subject_id predicate=predicate redirect=redirect
+                        actions=actions callback=callback}
+      delegate=`action_admin_dialog_new_rsc`
+%}
+```
+
+This postback has the following arguments:
+
+*   `subject_id` + `predicate`: Create an edge from the given subject to this new page, using the given predicate.
+*   `redirect`: Boolean flag whether or not to redirect to the edit page. Defaults to `true`.
+*   `actions`: Any actions to perform after the resource is created.
+*   `callback`: JavaScript function to call when the subject edge has been created.
+*   `objects`: A list of `[object, predicate]` pairs which are created as outgoing edges from the new page to the given objects. The object can be a resource ID or a resource name. Example:
+
+
+```django
+objects=[ [m.acl.user, \"author\"] ]
+```
+
+creates an “author” edge from the new page to the currently logged in user.
+
+Todo
+
+Extend documentation
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 %% interface functions
@@ -47,7 +82,7 @@ render_action(TriggerId, TargetId, Args, Context) ->
 
 
 %% @doc Fill the dialog with the new page form. The form will be posted back to this module.
-%% @spec event(Event, Context1) -> Context2
+-spec event(term(), z:context()) -> z:context().
 event(#postback{message={new_rsc_dialog, Title, Cat, NoCatSelect, TabsEnabled, Redirect, SubjectId, ObjectId, Predicate, Callback, Actions, Objects}}, Context) ->
     CatId = case Cat of
                 undefined -> undefined;

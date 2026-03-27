@@ -16,8 +16,11 @@
         {% with q.qpagelen|default:default_pagelen as qpagelen %}
             {% with q.qcat, q.qcontent_group as qcat, qcontent_group %}
                 <form id="{{ #form }}" method="GET" action="{% url admin_media %}" class="form-inline">
-                    <input type="hidden" name="qs" value="{{ q.qs|escape }}" />
-                    <input type="hidden" name="qquery_id" value="{{ q.qquery_id|escape }}" />
+                    {% for qkey, qval in q.qargs %}
+                        {% if qval and not qkey|member:["qcontent_group", "qcat", "qpagelen"] %}
+                            <input type="hidden" name="{{ qkey }}" value="{{ qval|escape }}" />
+                        {% endif %}
+                    {% endfor %}
 
                     <div class="btn-group pull-right">
                         <button class="btn btn-default" id="btn-filter">
@@ -91,7 +94,7 @@
                     action={dialog_media_upload intent="create"}
                 %}
                 <a class="btn btn-default" href="{% url admin_overview_rsc %}">{_ All pages _}</a>
-                <a class="btn btn-default{% if not q.qcat %} disabled{% endif %}" href="{% url admin_media %}">{_ All media _}</a>
+                <a class="btn btn-default{% if not q.qargs %} disabled{% endif %}" href="{% url admin_media %}">{_ All media _}</a>
                 {% all include "_admin_extra_buttons.tpl" %}
             </div>
 
@@ -138,11 +141,7 @@
                                             </td>
                                             <td>{% image medium mediaclass="admin-list-overview" class="thumb" %}</td>
                                             <td>
-                                                <strong>{{ id.title|default:id.short_title|default:_"<em>Untitled</em>" }}</strong>
-                                                {% if id.is_protected %}
-                                                    &nbsp; <small class="fa fa-lock text-muted" title="{_ Protected, not deletable _}"></small>
-                                                {% endif %}
-
+                                                {% include "_admin_overview_list_title.tpl" %}
                                                 <br />
                                                 {% if id.medium.filename|split:"/"|last as filename %}
                                                     <span class="text-muted">

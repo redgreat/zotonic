@@ -18,6 +18,35 @@
 %% limitations under the License.
 
 -module(mod_email_status).
+-moduledoc("
+This module tracks for all outgoing email addresses:
+
+*   If emails are successfully sent
+*   Number of emails sent
+*   Number of errors
+*   Number of bounces
+*   Latest error message
+
+With this it will be much easier to get feedback on all outgoing email.
+
+Accepted Events
+---------------
+
+This module handles the following notifier callbacks:
+
+- `observe_email_bounced`: Mark an email address as bouncing, only marks for messages which we know we have sent using `m_email_status:mark_bounced`.
+- `observe_email_failed`: Mark recipient addresses as failed when delivery attempts bounce or hard-fail.
+- `observe_email_is_blocked`: Report whether an address is blocked from receiving outbound email.
+- `observe_email_is_recipient_ok`: Decide if sending to an address is allowed based on bounce/block history.
+- `observe_email_received`: Record inbound email reception for recipient status tracking.
+- `observe_email_sent`: Record successful outbound deliveries for recipient status tracking.
+- `observe_tick_24h`: Purge old email status history during daily maintenance.
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `email_status_block`, `email_status_reset`.
+
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Email Status").
@@ -97,6 +126,7 @@ observe_email_failed(#email_failed{is_final=false, retry_ct=RetryCt}, _Context) 
     undefined;
 observe_email_failed(#email_failed{recipient=Recipient, is_final=IsFinal, status=Status}, Context) ->
     m_email_status:mark_failed(Recipient, IsFinal, Status, Context).
+
 
 %% @doc Mark an email address as bouncing, only marks for messages which we know we have sent.
 observe_email_bounced(#email_bounced{recipient=undefined}, _Context) ->

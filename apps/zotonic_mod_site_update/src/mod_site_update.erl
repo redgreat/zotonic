@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2010-2020 Marc Worrell
+%% @copyright 2010-2025 Marc Worrell
 %% @doc Git and Mercurial support for zotonic sites
+%% @end
 
-%% Copyright 2010-2020 Marc Worrell
+%% Copyright 2010-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,11 +18,80 @@
 %% limitations under the License.
 
 -module(mod_site_update).
+-moduledoc("
+This module pulls updates of a site‘s code from a remote version control system. The supported version control systems
+are git and mercurial.
+
+After enabling this module you will see a button **Update site** on the System -> Status page in the admin.
+
+This button is only available to users with the *use.mod_site_update* right.
+
+After a pull of new code, Zotonic will do everything that is needed. Including compilation of source code, reloading of
+dispatch rules, reloading of translations and reindexing the template directories.
+
+This update of the system can take a while.
+
+
+
+Webhook
+-------
+
+In GitHub and other systems it is possible to set a *webhook* that is called when new updates are pushed to the repository.
+
+In System > Modules there is a *Config* button next to the mod_site_update module. Click this and configure a secure
+token to be passed to the webhook.
+
+The URL for GitHub et al is:
+
+
+```erlang
+https://yoursite.test/api/model/site_update/post/webhook/<token>
+```
+
+Where `<token\\>` should be replaced with your configured token.
+
+The token is saved in the config key `mod_site_update.webhook_token`.
+
+Ensure that the external system performs a HTTP POST to the webhook, the posted body is dropped.
+
+
+
+Zotonic status site
+-------------------
+
+The `mod_site_update` module is also used by the zotonic status site.
+
+Here the module adds buttons to update sites and a button to update the complete Zotonic system.
+
+Site updates get their datamodel fixed by automatic restarts of modules, ensure that you increment the
+`-mod_schema(...)` version number.
+
+Zotonic updates are a bit more complicated. Small updates will be fine. Large updates that also change the datamodel or
+add new Erlang dependencies need more compilation and a system restart. So be careful with using this update button.
+
+Accepted Events
+---------------
+
+
+Delegate callbacks:
+
+- `event/2` with `postback` messages: `make`, `vcs_up`.
+
+").
 -author("Marc Worrell <marc@worrell.nl>").
 
 -mod_title("Site update").
 -mod_description("Update the site to a new version from Git or other version control systems.").
 -mod_prio(500).
+-mod_config([
+        #{
+            key => webhook_token,
+            type => string,
+            default => "",
+            description => "The token to use for the webhook used to fetch new code from the version control system. "
+                           "If empty the webhook is disabled. This must be kept secret."
+        }
+    ]).
 
 -export([
     event/2
@@ -97,7 +167,7 @@ event(#postback{ message = make }, Context) ->
     case z_context:site(Context) of
         zotonic_site_status ->
             true = z_acl:is_admin(Context),
-            spawn(fun() ->
+            z_proc:spawn_md(fun() ->
                     z:m(),
                     async_notice('Zotonic', ?__("Finished rebuilding Zotonic.", Context), Context)
                   end),
@@ -108,11 +178,11 @@ event(#postback{ message = make }, Context) ->
 
 
 % @doc Wire a notice to the current context
-render_notice(Site, Notice, Context) ->
+render_notice(Site, Notice, #context{} = Context) ->
     z_render:wire( notice(Site, Notice), Context ).
 
 % @doc Send a notice to the current webpage.
--spec async_notice(atom(), iodata(), z:context()) -> ok.
+-spec async_notice(atom(), iodata(), z:context()) -> ok | {error, term()}.
 async_notice(Sitename, Text, Context) ->
     z_notifier:notify(
         #page_actions{ actions = notice(Sitename, Text) },

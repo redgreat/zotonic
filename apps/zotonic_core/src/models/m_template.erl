@@ -1,9 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2019-2023 Marc Worrell
+%% @copyright 2019-2026 Marc Worrell
 %% @doc Render templates
 %% @end
 
-%% Copyright 2019-2023 Marc Worrell
+%% Copyright 2019-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,6 +18,18 @@
 %% limitations under the License.
 
 -module(m_template).
+-moduledoc("
+Model for dynamic template rendering. It renders a template path passed in the request path and returns the rendered template output.
+
+Available Model API Paths
+-------------------------
+
+| Method | Path pattern | Description |
+| --- | --- | --- |
+| `get` | `/render/...` | Treat segments after `/render/` as the template path, render that template with the payload query args, and return the rendered template output. |
+
+`/+name` marks a variable path segment. A trailing `/...` means extra path segments are accepted for further lookups.
+").
 -author("Marc Worrell <marc@worrell.nl").
 
 -behaviour(zotonic_model).
